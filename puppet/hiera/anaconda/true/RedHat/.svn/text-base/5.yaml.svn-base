@@ -1,0 +1,90 @@
+# Resources for installing RHEL 5 systems.
+---
+hiera::exec:
+  # The SYSV INIT system has a bug in it that causes problems on shutdown when
+  # a lockfile doesn't have the same name as the initscript that creates it.
+  fix_nfs_initscript:
+    onlyif: grep -qF '/var/lock/subsys/nfsd' /etc/init.d/nfs
+    command: sed -i -re 's!/var/lock/subsys/nfsd!/var/lock/subsys/nfs!g' /etc/init.d/nfs
+  fix_rpcidmapd_initscript:
+    onlyif: grep -qF 'LOCKFILE=/var/lock/subsys/$prog' /etc/init.d/rpcidmapd
+    command: sed -i -re 's!LOCKFILE=/var/lock/subsys/$prog!LOCKFILE=/var/lock/subsys/rpcidmapd!' /etc/init.d/rpcidmapd
+  osg_release_repo:
+    unless: rpm -q osg-release
+    command: rpm -i http://repo2.goc/osg/3.2/osg-3.2-el5-release-latest.rpm
+    before:
+      - Package[osg-release]
+      - Package[osg-ca-certs]
+    require:
+      - File[/etc/resolv.conf]
+#      - Exec[ifup_goc_intf_pub]
+      - Exec[start_dnsmasq]
+
+hiera::file:
+  /etc/nscd.conf:
+    source: puppet:///modules/hiera/anaconda/common/nscd.conf
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+  /etc/syslog-ng/syslog-ng.conf:
+    source: puppet:///modules/hiera/anaconda/common/syslog-ng.conf
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+  # Make sure this file exists so logrotate won't complain
+  /var/log/boot.log:
+    content:
+    owner: root
+    group: root
+    mode: 0644
+
+hiera::package:
+#   # RHEL 5-only Bluetooth package; unneeded
+#   bluez-utils:
+#     ensure: absent
+  # RHEL 5 and RHEL/CentOS 6 only (for now): CILogon CA certs
+  cilogon-openid-ca-cert:
+    ensure: present
+    require:
+      - Exec[osg_release_repo]
+#   # RHEL 5 and 6 only: smart card reader package; unneeded
+#   ccid:
+#     ensure: absent
+#   # RHEL 5/6: CPU speed throttler to save battery on laptops; unneeded
+#   cpuspeed:
+#     ensure: absent
+  dnsmasq:
+    ensure: present
+    before:
+      - File[/etc/dnsmasq.conf]
+      - File[/etc/dnsmasq.d]
+      - File[/etc/resolv.conf]
+  # RHEL 5 and RHEL/CentOS 6 only: local version of OpenSSH supports certificates
+  openssh:
+    ensure: latest
+    require:
+      - Package[goc-internal-repo]
+  postfix:
+    ensure: present
+    before:
+      - Augeas[postfix]
+  subversion:
+    ensure: present
+    before:
+      - File[/etc/subversion/servers]
+  xorg-x11-apps:
+    ensure: present
+  xorg-x11-xauth:
+    ensure: present
+
+hiera::service:
+  gociptables:
+    enable: true
+  sshd:
+    enable: true
+  sssd:
+    enable: true
+  syslog-ng:
+    enable: true

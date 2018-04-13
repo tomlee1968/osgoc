@@ -1,0 +1,12 @@
+# Rules for installing virtual machines other than stemcells
+---
+hiera::file:
+  /etc/resolv.conf:
+    source: puppet:///modules/hiera/anaconda/common/resolv.conf
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0644
+    notify:
+      - Exec[start_dnsmasq]

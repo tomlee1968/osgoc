@@ -1,0 +1,10 @@
+---
+#hiera::augeas:
+#  lvs_loopback:
+#    context: /files/etc/sysconfig/network-scripts/ifcfg-lo
+#    changes:
+#      - set IPADDR1 '129.79.53.195'
+#      - set NETMASK1 '255.255.255.255'
+#      - set IPV6ADDR_SECONDARIES '2001:18e8:2:6::230/128'
+#    notify:
+#      - Service[network]

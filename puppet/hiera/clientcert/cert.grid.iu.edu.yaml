@@ -1,0 +1,73 @@
+---
+hiera::exec:
+  signhostkey_facl:
+    command: setfacl -m u:goc:rx /opt/sbin/signhostkey
+    unless: getfacl /opt/sbin/signhostkey | grep -q '^user:goc:r-x$'
+    require:
+      - File[/opt/sbin/signhostkey]
+
+hiera::file:
+  # This is the SSH CA private key, used for signing user and host keys.  It
+  # corresponds to the public key found in /etc/ssh/ssh_known_hosts and
+  # /etc/ssh/ssh_trusted_user_ca_keys on all systems.
+  /root/.ssh/osgops_ca:
+    content: |
+      ENC[PKCS7,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]
+    owner: root
+    group: root
+    mode: 0600
+    replace: true
+  # This is the passphrase for the above key.
+  /root/.ssh/capwd:
+    content: |
+      ENC[PKCS7,MIIBeQYJKoZIhvcNAQcDoIIBajCCAWYCAQAxggEhMIIBHQIBADAFMAACAQEwDQYJKoZIhvcNAQEBBQAEggEAGeiWByTr4iWtY1430N0e8GfmKQmPrtnXyqxgFBQhU2zlbX1E+DPElEhSMF7ZO+WTs9Sljxb0fMmRSATErod7Ukx0j4ja0G/jepIs476Lzh8ru/YpE/NSk3/si9+63KFewFat6eniYFVgEOYcdrP5VIz9vGVSUDdmoLZcTuPG3gNrhgiv24ZYnytdCnXCtfzJIni0fF1pK0fe4GTfqBt6P3yYPIcBr0TbGEZbw+oAIpagXXRw6GXsdsUu3bdB/3ZLh+cxD+GQg8tGWySQNQpJpVHRlNd6O/nPMfwrYGoCm9E+NAjvalywpi51doyMrASiaLDZkzsRTztJ4MQwQlJUmTA8BgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBDq1rpSHHlmlBOiQT7QQoEDgBCgegmsTayrT+NnphZTWBdT]
+    owner: root
+    group: root
+    mode: 0600
+    replace: true
+  # This small script prints the above passphrase for scripts that need it.
+  /root/.ssh/printcapwd:
+    source: puppet:///modules/hiera/cert/printcapwd
+    owner: root
+    group: root
+    mode: 0700
+    replace: true
+  /opt/sbin/casignd:
+    source: puppet:///modules/hiera/cert/casignd
+    owner: root
+    group: goc
+    mode: 04750
+    replace: true
+  /etc/init.d/casignd:
+    source: puppet:///modules/hiera/cert/casignd.init
+    owner: root
+    group: root
+    mode: 0755
+    replace: true
+  /opt/sbin/signhostkey:
+    source: puppet:///modules/hiera/cert/signhostkey
+    owner: root
+    group: root
+    mode: 0750
+    replace: true
+  /opt/sbin/signmykey:
+    source: puppet:///modules/hiera/cert/signmykey
+    owner: root
+    group: goc
+    mode: 0750
+    replace: true
+
+hiera::service:
+  casignd:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+    require:
+      - File[/etc/init.d/casignd]
+
+hiera::package:
+  openldap-clients:
+    ensure: present
+  osg-pki-tools:
+    ensure: present

@@ -1,0 +1,24 @@
+---
+hiera::certificate:
+  reports-itb.grid.iu.edu:
+    cert:
+      path: /etc/grid-security/host/cert.pem
+      source: puppet:///modules/hiera/certificates/reports-itb.grid.iu.edu_cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+      notify:
+        - Exec[httpd_condrestart]
+    key:
+      path: /etc/grid-security/host/key.pem
+      content: |
+        ENC[PKCS7,MIIH/QYJKoZIhvcNAQcDoIIH7jCCB+oCAQAxggEhMIIBHQIBADAFMAACAQEwDQYJKoZIhvcNAQEBBQAEggEAAy+HUyQBdnDBGHj4uKD5tonx6NRNzvzoOBUE9eiaiwOuLesTGnLX6qgPtZl+2TiydQS9E1UEH6pWVIkr+wNEa3XplUpssnDWJdzBJPoLp+d+lpQj3nCFHiRsoGU9N0ie3dUL9gbEjpT5T/7GvgSmQrv0rED7jjyum7EpusGVCidb9AAS0WpYN7X2IKjc87H/7L9E0gPi4A2DIRS9K1ZMtfbryjKGuRarHIS6Yms6DIcPMm5lagmrDoiZVpf/YgZ2h4Z1B8anYdoIqre2XthO+EcD9t9D1KG2NKnMu8JfaFMzPreTbJgfFXwosRDG6B4+L3V1NFpakvzYIHyy2ypmHjCCBr4GCSqGSIb3DQEHATAdBglghkgBZQMEASoEEOFfcoqUj20Ug/F4Abij3zCAggaQ0CD4mq9oMr8oUM1e+9bvZLPzMqTFGpnOVBXyj1U/ktUhhGj2GWguRGxPZWy+1GOuif5uuK3p2f1sE3JTxiDHUf/c92H9cn4n6g0k94MtyLbTJiXGEFV2wj5L5/pFedYeKWrsb2meBhQauAAz2SKWABXj4jIF+CLwzcfWxH24vYf+KoNWKaESwQa4BShYncM4Rteif7TufmGhzOD2AlEOlwSfKG3USvjAsa8DGo9duv+K+vOZxWZ52WmH6MkBWOwJpLtBe98OCW/KzTepE4+xHZeu4LnofMyV/XHb0krfLwbWj4e2jNrfdihasZLRsTxhgb5vqGqJ/WSsXySFjnsmY5lwhI0htu7leaGaZXZyQUhES+u4uwNiFuimbMLM66Z4wyTVSKIYh+661RC+O2N9mpbrtmdWJMQy+8E8wsInJQrmD6j36J1pHz1k+Uvpojx2iNcFuLU49Z7lKT3K/jTNK7H/rUQqzOqaCp+wkAwn9ShoqtpJg8OTXY4Wb5Se7HlxG4XWcPup5c9lfD99fNX1XggnRldJozuNByfczcGIasaiDlgW/CVRnALmxkOokEUSILwdN+UHqfAFBFP2/dOoStugMq9/hQLxckbQV+hbiE0WOFNBkly2xzCCemRS3KVy4oHvrWSR71MfBBVH5+nCmqfK3kgQP6mgakyIt3uA+iROciyUbg7Z/DV45C9+jI9EeLOEhOCVOSXFZC5UcgJ7eiAQh5DYqy9lq97chKDGsM37O8Wt7wmNN54zEUNl5Koqrf87eFUMHbBOAxywR7jIL1Qm5Ktpivp1PNnvUaJ9DORqp60w7xjlEzjIZNSW1ruTxhcB8JFvjuaRGAeuDskTF0PfLm0ZYLGu2jhIzEWlYG+raI3N9jdShN9I0/CXRi5iIMlPBRKPAvBMkGYsf0hISepOAahZ151I+UdoCpPhkHUaRBd6yDu1ctaLafdIRqEztUmT4w/Az0bLtufxxMGJ9eElzsse/YZjWkvQPJBkkbyHY0+Cddkw8YcrytDvC3gP+HrsgQBJQ73CU5dpUo6XMCW+nnyCDFJxVDb/6AkKYKMW6tpDw5pbV3NHRSEsN7gJvmgbhbcDIahOCXwAReF7rmurjFE/k/IpZlThOLMg26G7C1rZrdWhplK3qH0zTaesZWFh1ca62PufnrqgEab4n7ralvTVcXlnL1viDcmD56ptaE232L83sX2NXI2L614DtswKyVU5P3Q+1xsbQA1FXKaqh2LhWjZ+4xCZdVd+7pMvV0XIdFG+vORsYf8/4mKl7xnFhDwQJwPN+Oh24P4+P5jOYSk4QsqIzqmtAg4bA+PURDXYbe5Hf/DhKSxz8GhQkrrr9lrFy3t393RRaoWkq6dgH57sQ062pUN5GxSABscrNJflQeTTLR+rI0EGJ3wUzZPmwzn3aZd8FumKC3IAikQtiM17GJvP0P6kHr8dlcKl1dDiBqL4Q3EmcYuANAbfszIZWrac7OpJ9pFpRjgptqjNc4Vl03bLEqofsQiEsTrgUZHzzhCLlgHuLwyaSSKgxvadIB7ibF2t8sAncCCXD3Sstz5xAD+13tkMeN4XWrFmkHZWaHFliiMGoAc10xwFl9f+4JEG+/lclp/sji8yxSU+bXnwE4DXkQ6ycO2L8aZ+zG2o4rRNtAmMKJb4Q8mfzgZHMYPuW60sMUdBumi28a+oxr+X/HAY/RPdMTOan/l9xrCkhdrB8koFjREuplnAPg1TyBcaoUFJhSKF83qvMwF9tPzPQzhivOlW6iV3uMdkLsWTkHA/gfW8VTEjPqYDFv3/Ggazdax4d7Qyhwmf9tP2kz67K9YgBmdde+WGSBKJrwKrrc+rPiFFoiwizyGWrLy7Ck8Z7/LZdke/QSuiegpCxCZvHD9GWyUmeq6GWna4ddqlxNWryTIif6Ct7pNlSR5F4NxIhi8v1aofMrHqNCzOYNv5OP2i/obqamwjLlGPUE8ZQKgKawMhpiwQVXsqwAoj2z+hrO5H2Ma+w4e6qolzbbCeU4VooX7+R8rpm5pv3yFeaQdlXmr13E073GlxotQEH6X8iF3gWWMK9sfBw9NKzWwv1m63P7B7PyqoM+Jeqzbzq6EV+8BLNUgcJQkbdfyogmbk/WlTxlDwo0/haIgXxGyAXlWdxeEaQp92wOKr8hx1LUZKieLxi+E1nRs1ZRUd9Gp5PGyytsny1Pels5uvaMPGZ0rv75egfc+oFUU8QIKIuyTH2FMzbYhSGIuo]
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+hiera::exec:
+  httpd_condrestart:
+    command: /sbin/service httpd condrestart
+    refreshonly: true

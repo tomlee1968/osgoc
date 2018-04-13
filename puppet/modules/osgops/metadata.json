@@ -1,0 +1,14 @@
+{
+  "name": "thomlee-osgops",
+  "version": "0.1.0",
+  "author": "thomlee",
+  "summary": "Site-specific customizations for Open Science Grid Operations Center",
+  "license": "Apache 2.0",
+  "source": "http://github.iu.edu/thomlee/osgops-puppet",
+  "project_page": null,
+  "issues_url": null,
+  "dependencies": [
+    {"version_requirement":">= 1.0.0","name":"puppetlabs-stdlib"}
+  ]
+}
+

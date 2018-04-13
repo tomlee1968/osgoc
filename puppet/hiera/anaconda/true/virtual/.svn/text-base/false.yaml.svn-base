@@ -1,0 +1,122 @@
+# Rules for installing on a physical system
+---
+hiera::augeas:
+  # Enable the 'magic SysRq' key
+  magic_sysrq:
+    context: /files/etc/sysctl.conf
+    changes:
+      # Enable the 'magic SysRq' key
+      - set kernel.sysrq 1
+      # Increase the semaphore limit for Dell OpenManage
+      - set kernel.sem 250 32000 32 4096
+
+hiera::exec:
+  # Install Dell OpenManage repo
+  dell_omsa_run_repo_script:
+    command: wget -q -O - http://linux.dell.com/repo/hardware/latest/bootstrap.cgi | bash
+  # Add the dellomadm group to the Dell OpenManage rolemap file
+  dell_omsa_add_dellomadm_group:
+    command: echo "+dellomadm * Administrator" >>/opt/dell/srvadmin/etc/omarolemap
+    require:
+      - Package[srvadmin-all]
+
+hiera::file:
+  /etc/cron.d/cleanup_semaphores:
+    source: puppet:///modules/hiera/anaconda/physical/dellom/cleanup_semaphores_cron
+    owner: root
+    group: root
+    mode: 0644
+    require:
+      - File[/opt/sbin/cleanup_semaphores.sh]
+  /etc/init.d/dellom_alertmail:
+    source: puppet:///modules/hiera/anaconda/physical/dellom/dellom_alertmail_init
+    ensure: present
+    owner: root
+    group: root
+    mode: 0744
+    require:
+      - Package[srvadmin-all]
+  /etc/iptables.d/55-local-dell_om:
+    source: puppet:///modules/hiera/anaconda/physical/dellom/55-local-dell_om
+    owner: root
+    group: root
+    mode: 0744
+    require:
+      - Package[srvadmin-all]
+  /etc/munin/plugins/gocipmi_dell_fan:
+    ensure: link
+    target: ../../../opt/share/munin/plugins/gocipmi_
+    require:
+      - Tidy[munin_old_plugins]
+  /etc/munin/plugins/gocipmi_dell_temp:
+    ensure: link
+    target: ../../../opt/share/munin/plugins/gocipmi_
+    require:
+      - Tidy[munin_old_plugins]
+  # Protect superusers from themselves
+  /etc/profile.d/protective_aliases.sh:
+    source: puppet:///modules/hiera/anaconda/physical/protective_aliases.sh
+    owner: root
+    group: root
+    mode: 0755
+  /etc/resolv.conf:
+    source: puppet:///modules/hiera/anaconda/common/resolv.conf
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0644
+    notify:
+      - Exec[start_dnsmasq]
+  /opt/sbin/cleanup_semaphores.sh:
+    source: puppet:///modules/hiera/anaconda/physical/dellom/cleanup_semaphores.sh
+    owner: root
+    group: root
+    mode: 0744
+    require:
+      - Package[srvadmin-all]
+  /opt/sbin/dellom_alertmail:
+    source: puppet:///modules/hiera/anaconda/physical/dellom/dellom_alertmail
+    owner: root
+    group: root
+    mode: 0744
+    require:
+      - Package[srvadmin-all]
+
+hiera::package:
+  # Dell firmware tools (from OMSA repo)
+  firmware-tools:
+    ensure: present
+    require:
+      - Exec[dell_omsa_run_repo_script]
+  # Dell OpenManage Server Administrator
+  srvadmin-all:
+    ensure: present
+    require:
+      - Exec[dell_omsa_run_repo_script]
+  munin_gocipmi:
+    ensure: present
+  munin_ipc:
+    ensure: present
+
+hiera::service:
+  # Dell OpenManage Server Administrator
+  dataeng:
+    enable: true
+    require:
+      - Package[srvadmin-all]
+  dellom_alertmail:
+    enable: true
+    require:
+      - File[/etc/init.d/dellom_alertmail]
+  dsm_om_connsvc:
+    enable: true
+    require:
+      - Package[srvadmin-all]
+  dsm_om_shrsvc:
+    enable: true
+    require:
+      - Package[srvadmin-all]
+  # Enable the 'ipmi' service (for monitoring hardware) on physical servers
+  ipmi:
+    enable: true

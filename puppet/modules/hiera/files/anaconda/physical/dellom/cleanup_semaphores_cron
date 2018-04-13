@@ -1,0 +1,2 @@
+# Run /opt/sbin/clean_semaphores.sh on a regular basis
+57 4 * * * root /opt/sbin/cleanup_semaphores.sh >& /dev/null

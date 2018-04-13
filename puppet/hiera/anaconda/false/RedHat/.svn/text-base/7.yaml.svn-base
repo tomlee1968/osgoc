@@ -1,0 +1,48 @@
+# Rules that are in effect if we're on a CentOS 7 system but NOT installing it.
+---
+hiera::exec:
+  chmod_iptables_rpmsaves:
+    command: chmod a-x /etc/iptables.d/*.rpmsave
+    onlyif: test `find /etc/iptables.d -name "*.rpmsave" -perm /ugo+x | wc -l` -gt 0
+    notify:
+      - Service[iptables]
+
+hiera::file:
+  /etc/iptables.d/00-global-clear:
+    notify:
+      - Service[iptables]
+  /etc/iptables.d/05-global-packetcounts:
+    notify:
+      - Service[iptables]
+  /etc/iptables.d/10-global-chains:
+    notify:
+      - Service[iptables]
+  /etc/iptables.d/20-global-policies:
+    notify:
+      - Service[iptables]
+  /etc/iptables.d/30-global-rules:
+    notify:
+      - Service[iptables]
+  /etc/iptables.d/90-global-end:
+    notify:
+      - Service[iptables]
+
+hiera::package:
+  confsync-dyndns-services-goc:
+    ensure: latest
+    notify:
+      - Service[confsync-dyndns]
+
+hiera::service:
+  confsync-dyndns:
+    ensure: running
+    enable: true
+    require:
+      - Package[confsync-dyndns-services-goc]
+  # On a running (but not installing) system, we want to make sure this is
+  # enabled and running.
+  iptables:
+    ensure: running
+    enable: true
+    require:
+      - Package[iptables-services-goc]

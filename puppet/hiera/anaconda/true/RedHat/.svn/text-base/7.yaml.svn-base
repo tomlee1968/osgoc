@@ -1,0 +1,37 @@
+# Resources for installing a CentOS 7 system (not for the system after it's
+# installed).
+---
+hiera::exec:
+  authconfig:
+    command: authconfig --disableldap --disableldapauth --disablecache --enablesssd --enablesssdauth --enablemkhomedir --update
+  # If the osg-release RPM isn't installed, no package resource can cause it to
+  # be installed, because it contains the YUM repo file defining the repo that
+  # contains the osg-release RPM.
+  osg_release_repo:
+    unless: rpm -q osg-release
+    command: rpm -i http://repo2.goc/osg/3.3/osg-3.3-el7-release-latest.rpm
+    before:
+      - Package[osg-release]
+      - Package[osg-ca-certs]
+#    require:
+#      - Exec[ifup_goc_intf_pub]
+
+hiera::package:
+  # Doesn't play nice with iptables-services-goc, yet must be installed
+  # initially due to Anaconda needing things in it:
+  firewalld:
+    ensure: absent
+
+hiera::service:
+  confsync-dyndns:
+    enable: true
+    require:
+      - File[/opt/etc/confsync-dyndns-hosts]
+  # We want this enabled but not running, because when it starts it tries to
+  # load the netfilter kernel modules, which are compiled for the installed
+  # system's kernel, not the installer system's, and those versions are usually
+  # different, meaning there will be tons of errors
+  iptables:
+    enable: true
+    require:
+      - Package[iptables-services-goc]

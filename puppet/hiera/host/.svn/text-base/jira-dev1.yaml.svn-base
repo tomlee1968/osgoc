@@ -1,0 +1,22 @@
+---
+hiera::certificate:
+  jira-dev.grid.iu.edu:
+    cert:
+      source: puppet:///modules/hiera/certificates/jira-dev.grid.iu.edu_cert.pem
+      path: /etc/grid-security/host/cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+      notify:
+        - Exec[rebuild_jira_keystore]
+    key:
+      content: |
+        ENC[PKCS7,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]
+      path: /etc/grid-security/host/key.pem
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+      notify:
+        - Exec[rebuild_jira_keystore]

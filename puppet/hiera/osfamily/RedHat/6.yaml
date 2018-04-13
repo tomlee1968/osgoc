@@ -1,0 +1,45 @@
+# Hiera file for RedHat-family distros with major version 6 regardless of
+# whether we're installing with Anaconda or just updating
+---
+#classes:
+#  - temp::disable_redhat_ip6tables_initscript
+
+hiera::exec:
+  chmod_iptables_rpmsaves:
+    command: chmod a-x /etc/iptables.d/*.rpmsave
+    onlyif: test `find /etc/iptables.d -name "*.rpmsave" -perm /ugo+x | wc -l` -gt 0
+    notify:
+      - Service[gociptables]
+
+hiera::file:
+  /etc/sysconfig/ip6tables-config:
+    source: puppet:///modules/hiera/iptables/ip6tables-config
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0644
+  /etc/sysconfig/iptables-config:
+    source: puppet:///modules/hiera/iptables/iptables-config
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0644
+
+hiera::package:
+  gociptables:
+    ensure: latest
+
+hiera::service:
+# We can't start the gociptables service here in all cases -- it attempts to
+# load the netfilter kernel modules, and while installing, this causes numerous
+# error messages, as the installer kernel is nearly always a different version
+# from the kernel on the system being installed.  See
+# hiera/anaconda/false/RedHat/6.yaml.
+#  gociptables:
+#    ensure: running
+#    enable: true
+  iptables:
+    enable: false
+    hasstatus: false

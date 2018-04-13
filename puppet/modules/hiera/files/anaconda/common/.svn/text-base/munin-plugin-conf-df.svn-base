@@ -1,0 +1,4 @@
+[df]
+  env.exclude none unknown devtmpfs iso9660 squashfs udf romfs ramfs debugfs binfmt_misc rpc_pipefs fuse.gvfs-fuse-daemon fuse tmpfs
+  env.warning 75
+  env.critical 90

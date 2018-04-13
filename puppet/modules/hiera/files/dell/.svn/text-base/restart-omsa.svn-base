@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Restart OMSA components (SYSV init edition)
+
+for i in dsm_om_shrsvc dsm_om_connsvc dataeng openwsmand racsvc; do
+    service $i stop
+done
+
+for i in racsvc openwsmand dataeng dsm_om_connsvc dsm_om_shrsvc dellom_alertmail; do
+    service $i start
+done

@@ -1,0 +1,33 @@
+# Rules that take effect if we are on a RHEL/CentOS 6 system but NOT installing
+# it.
+---
+hiera::service:
+  gociptables:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+    subscribe:
+      - Package[gociptables]
+
+hiera::file:
+  # anaconda/false.yaml has most of these, but 5/6 need to notify
+  # Service[gociptables], while 7 must notify Service[iptables].
+  /etc/iptables.d/00-global-clear:
+    notify:
+      - Service[gociptables]
+  /etc/iptables.d/05-global-packetcounts:
+    notify:
+      - Service[gociptables]
+  /etc/iptables.d/10-global-chains:
+    notify:
+      - Service[gociptables]
+  /etc/iptables.d/20-global-policies:
+    notify:
+      - Service[gociptables]
+  /etc/iptables.d/30-global-rules:
+    notify:
+      - Service[gociptables]
+  /etc/iptables.d/90-global-end:
+    notify:
+      - Service[gociptables]

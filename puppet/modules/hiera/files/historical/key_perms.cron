@@ -1,0 +1,6 @@
+# Email thomlee if we can find any certificate keys whose world
+# permission bits aren't 0.
+
+MAILTO=thomlee@iu.edu
+
+#* * * * * root find /etc/grid-security -name '*key.pem' -perm /0007 ! -type l -ls

@@ -1,0 +1,73 @@
+---
+hiera::certificate:
+  oim-itb.grid.iu.edu:
+    cert:
+      path: /etc/grid-security/host/cert.pem
+      source: puppet:///modules/hiera/certificates/oim-itb.grid.iu.edu_cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+    key:
+      path: /etc/grid-security/host/key.pem
+      content: |
+        ENC[PKCS7,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]
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+    require:
+      - File[/etc/grid-security/host]
+  oim-itb.grid.iu.edu_2:
+    cert:
+      path: /etc/grid-security/http/cert.pem
+      source: puppet:///modules/hiera/certificates/oim-itb.grid.iu.edu_cert.pem
+      owner: apache
+      group: apache
+      mode: 0644
+      replace: true
+    key:
+      path: /etc/grid-security/http/key.pem
+      content: |
+        ENC[PKCS7,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]
+      owner: apache
+      group: apache
+      mode: 0600
+      replace: true
+    require:
+      - File[/etc/grid-security/http]
+
+hiera::file:
+  /etc/grid-security/http:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+
+ssh_userkeys::keys:
+  blin@cs-wifiopen-92.cs.wisc.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDS4jk5XBtcsaqJruRK1OCuOVxmxRSsGsr7ePvQL95B3ZZ8i3XpeOs/R+wUyOrydEv8E3uluyclBM+QhWZH0KMuzWJ6KlKx1yaBTWT9iXO+/ovbarlDNLdtmfZs55bk9i0zt2rVt/gWTBrgWOYJjtYQZjtjhIWwaF5/bdcJjywTx6FC0/vguGHTBKEicERwVryyHo24KVapXGEiVO8q7bNZXdfbYW95dtHRYTRmzo2IjafmYY01zzFKMhSIN+Co/tWrAWXS1Tjt/WxxX8eE3/G9P9943oEfCpeesovdwMhPRk8FbZqgXVFMNhKLOgDzPn5/KbrrvCdlqfPqGz9HevJ/
+  edquist@cs.wisc.edu:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAMItd5GPvXnlxMNZfvfLKahuyRF2ZuNzDXADLtDZy6Za9HotM6g1eSwdxWz3arXP3RqwkMukon4PhHnuHO02uWcEH3yylAJLI8oIXle2mDHWF1kjm1nacXnh5rfmN7lHs6o4lGWL6DdKBUvZHtLWeWWopr6NA7tpQxgD1CveV7+PAAAAFQChooRzl8zY5XjiMVR9rdsuIvwgJQAAAIEAhuiyfLYSZwvAxU2dI6BcGXO+ZMxkxoBePAYUrNBb/bfVSbieUmpFIJST73HobDEKP4ghvmcvrtqFRJX7pCnzxYok5d3GMRGqpq5oDNe6yKJRx5FoyeFOlkECOL26gYUmYpdOII42Ba705+AO8GbiB0rtZJwJoINSwBMa+Hql2HIAAACAXpEZyaXMLzVGzxPBA1t8GmnKQtzGwSHmqmHrv+rEJUsEzLCF5UX7HUwJ1Ihd3QuVbND3aXy4E0Ug/4/dz9MHaHzI6J/4E2uS472GFad2AD7xqdpPJim4Pziqfcx0cd3Sjg0w/MjTbdoi8ipY4Pb+uDcA3fH5sjtBvakcp8tGR3E=
+  matyas@tonic.cs.wisc.edu:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAJGbLHbLZ820Cj/6oFFKLozs+55Tgw1FseghaKSM0ycV56U1HvhS3NKXNncX7AhanzMMRgz5xAdD8AbWDuG73tKh3OJvmgPiS2PYIr9IcSuomOo0FuNG0YL09QvwK1t+9oFSsN//fWaSug83WEidT/Q58a6Z/3X9hfUnNdYKdUUBAAAAFQCuG02xY1RfobZxON7BtemNFz21OQAAAIB6pBq+343zEbcNAsRgn5xs//VRU40Rm4yO+w1GvpLPXc+ym8NV9ncLPWd5mFTJAwpIj1Pc3q3Z4s/ItNsa1xHLNAeJQhWqqTICnUsy+DyOQLUh3yKmzxosmoaHAL50iUm1vASxUs/t0L2jdt755i6BD3M0NEWB3ZGGY/c4YvDWQQAAAIAJWl60lJyPKVj1Pc95XD79EcyEuMKTxiKv+AoLaSf83V6GfQRH+BGijz8A9lyfsaJtIRRQDJIrNKfo4EsYfMbgQg7SaxWcdG5MyNLmx8RAR/Jr9oap/p6J8s6RHProlGoAnEmBkw60Hn/FNXCpBf2Lm2//xstmOYk4UUIY38rncg==
+
+ssh_userkeys::users:
+  blin:
+    home: /home/blin
+    group: blin
+    keys:
+      - blin@cs-wifiopen-92.cs.wisc.edu
+  edquist:
+    home: /home/edquist
+    group: edquist
+    keys:
+      - edquist@cs.wisc.edu
+  matyas:
+    home: /home/matyas
+    group: matyas
+    keys:
+      - matyas@tonic.cs.wisc.edu

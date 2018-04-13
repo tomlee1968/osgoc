@@ -1,0 +1,68 @@
+---
+hiera::augeas:
+  ssl_chain_file:
+    context: /files/etc/httpd/conf.d/ssl.conf/VirtualHost
+    changes:
+      - set directive[last()+1] SSLCertificateChainFile
+    onlyif: match *[self::directive="SSLCertificateChainFile"] size == 0
+    notify:
+      - Service[httpd]
+
+  intermediate_incommon:
+    context: /files/etc/httpd/conf.d/ssl.conf/VirtualHost
+    changes:
+      - set "*[self::directive='SSLCertificateChainFile']/arg" /etc/grid-security/intermediate/incommon.pem
+    onlyif: match *[self::directive="SSLCertificateChainFile"]/arg != "/etc/grid-security/intermediate/incommon.pem"
+    require:
+      - Augeas[ssl_chain_file]
+      - File[/etc/grid-security/intermediate/incommon.pem]
+    notify:
+      - Service[httpd]
+
+hiera::certificate:
+  is-itb1.grid.iu.edu:
+    cert:
+      source: puppet:///modules/hiera/certificates/web-itb.grid.iu.edu_cert.pem
+      path: /etc/grid-security/host/cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+      notify:
+        - Exec[httpd_condrestart]
+    key:
+      content: |
+        ENC[PKCS7,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]
+      path: /etc/grid-security/host/key.pem
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+
+hiera::exec:
+  httpd_condrestart:
+    command: /sbin/service httpd condrestart
+    refreshonly: true
+
+hiera::file:
+  /etc/grid-security/intermediate:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/intermediate/incommon.pem:
+    source: puppet:///modules/hiera/certificates/intermediate_incommon.pem
+    ensure: present
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+  /etc/grid-security/http/intermediate_bundle:
+    ensure: absent
+
+hiera::service:
+  httpd:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true

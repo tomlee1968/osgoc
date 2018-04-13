@@ -1,0 +1,40 @@
+# Note that rsv1 looks like an instance of rsv, but it is not -- it should
+# never have been named this.
+---
+hiera::certificate:
+  rsv1.grid.iu.edu:
+    cert:
+      path: /etc/grid-security/http/cert.pem
+      source: puppet:///modules/hiera/certificates/rsv1.grid.iu.edu_cert.pem
+      owner: tomcat
+      group: tomcat
+      mode: 0644
+      replace: true
+      notify:
+        - Exec[httpd_condrestart]
+    key:
+      path: /etc/grid-security/http/key.pem
+      content: |
+        ENC[PKCS7,MIIH/QYJKoZIhvcNAQcDoIIH7jCCB+oCAQAxggEhMIIBHQIBADAFMAACAQEwDQYJKoZIhvcNAQEBBQAEggEAAb+oBUVDb0/sNVN32ZawbBbZ6xkOodPHQ6SBWD1AjB1lBecCOppZ1IUZvaFpmHfHLlOwy8C5LHMftWEPsyQQGUMBnnhPZPsQwmaHv3hp8ZLYmzzcrNGFvk2ASxm68mWjxeodCUZFDTZXOcaVCa8YBL1Q9XdbHKo0QutXm1ghkmPz1SIbEFHP45NPrOMeUAZSKIscygwbo4yBYnMFcvj/ifmOKVZnygIhjb6Da+iHLs6CPEOmg8e6dccVwTX3+dhwsNKYjlygSqr0g2dwH262tJw5xuBL00s/+2VAcJ6F9DOEl8fJdIDjMLGVtvHNiguTG9h40BO3xA6iWpSvLD9+hDCCBr4GCSqGSIb3DQEHATAdBglghkgBZQMEASoEEKNUT77s2M9f+P+Mv0SKvdyAggaQ+GoPk0M44xP29jyYSSzQ/u7O+5/M4e5fpEMVSTz0+KP6mD8qXtYaD6PUtKHkclVV2KCdgYvcC1NSR58PG6AJ5MO0qZNvtAHLiK/v4Wfbr0CQGkhBI+tlTJdK6nnWk1V/Uoupu3UJEsLpGjhdXAFzlh+9QLiqof3cBIIuU56YA53EgkY3VWeHUDs08Ie8CkwTRNO1xDH/GG1uTt50A+V44dLQwZQtra0TUKf94g1qrU2Ff/vnB7fWTKTFofAGU5QLFGvmR11uOcOmgwB3F33343d9Dt1SRygpelX5SVGx2P2Yli89Q2I+uG97mRTQNGoGGU2FAZ43RGP/vcnEMiP4+Z1wcU1trhDCiPMA0fTpHA6kYVvBI7QxGZabraFE+XINi10QsDpLKetCuljCGR44iTPiptaHPbrqTxM05hRx0YTsBwO2bOfCuJ9EaPqi3rxLoMb3U9DkWA/oAo4FxZHdUFjkQIIdcLx0aH7HcysDSYG/qVAeByV8XnL50vDCWwyeXjvj5+WkdkR+pMfUPQ0ts7wxnW4INjwjVj5zJt0ZQxiVL3gIErq//YHEIutEbDevSBorxLfe7yn1u7Wav+a9092NyfDGSmeFGkUR5AQGKi0S+tPDKTD0ab7jkoER5B7zaju30msxoBMNJE0SRA/rjtj+tw7T1XFjzBdfosYdMJTyJpJaqZdVLpmCHvitIPgMxSZso+qXuicg7oMkis2dFQByFDkWvr+F/grFbsixw0F+yznhN/Mwe/hJF8ZTucmbLE11LxTMIeT7H07Lg7AflN983ssNzpVMTZRQ7CIIxKVzDv5KUPiMwV1FeQQDw/h0zMgnlAjGLJ97ZWfzsowtajE02Tw23TU8wz/Smt8QJNNE5TMieVUT9m6VtPaFJ7mhK3ysNJJ8KrsbCbOcGV56Af5GrVu1HWTArlGm3csWC3qoNv2aHY12JR07++NEd2xmn92jQQ8uKLhbcVX6d4Nn0uONCavfTH8K7QruJtiEVx+EJVIxaO7XZa3woy+UtIbf6LX1N4b5XUTtnhjS0eXS5ejahxqde9T53UlyJpGW3RmW/lOSHRIhLvIVDA5sOn3xuzY8jHbaQkIEn7Bl07Voy1bYoKTLspKRYLYhSVRc9QRxQBnxlXBaNmjjDAluI5ZvGzlsk328ukTmrWCEupcXm+6xLS1QFZKJUYET+eCpsFYFckhNCbRrRbtcZzfPcnsNwbIxOwHPpR5K4AalX5INog2mcLeEuv8TNKeoadWxJrjTwvuqVijer/SdrmpHo4CM0iL8R9jrBsJABCvUcsYGEejeaL0PSDVPjQNpgivB69SiVTA6EZm5mwEJv2YHvR28rmOc3tENcyMu5ADAibJzne6PlVo4gEVKCLcYHBZSOrJzECJbleH6qSoiR35+2338sNTALGBUeJ+Fui9Grrnbj3R07WwKQ9IXLiO4xwRJ29E7rki0Lh26u823sFkxFx63pkUH5iV+2qQqnnKcbvsiTQZiq/+omBkVyqxKp+qvHWfqaZttlLDhinX/D/2aNjUkZg9CO3uhtEUVex/rOSDVeAM8gOqdqMCJiRaO05mTqbAK0tzJUTS8WJmfAyIXNN+fLe2OHcCaD3eeeNXT6oqLXhsaZbObkFaIagt5kYHgt+uAdBQHfrwttKfw70RiRiV1o3jqYshmxSWPbbrYy8HCVVlXOBLozESKZQwgppA0wHxQ13F6qJ8C/WJEHVvIIzm3Hn+alLCrkme6giIx1pfNNCtHzYu3MSn8BU88sLX7d7+dyO0cw9Hkej8P6f7M7LNjsPNSaTJIlM2wZudHIGErZH05XFPEihyH1uCBT2cgmT4BzUgzrM+/sAADaZmhn13lZh/u6us6501uaMLdrZ0QB+HVadvZn3ASn7n9u0asVFzVIAXhNpEuCa108LedhwTTl/eq3S+o5oRMXTj8fyMxAm23GHaohP2HRLdkYYrk9zUYFpjfhoRVZaRM3oD2VADfNpWj9eKHh+b2pbpCY2O3H4mguiT1RlRsb3T07va8bIIiYZ8WvaSKdOoFSRzx3RyBvwdBr1oE6cCOxSdeiPS5IiXvvbNPAx0ruX/Qb6ZKVMu1tmLupOE6fFF7PP67zJj4BMdgYl4Gn9tJzDdIMAS0Gn0ltOS7CIT8Oxktnj9zKfd9iSbbw/AYoVRvZJOPOggJ7dMd2c0yU3i+iSoc4sKzW1X6Hncgv6lW35seQoDYx6kPZ41uhkfpKT5ezT18SP59]
+      owner: tomcat
+      group: tomcat
+      mode: 0600
+      replace: true
+      notify:
+        - Exec[httpd_condrestart]
+    require:
+      - File[/etc/grid-security/http]
+
+# Ordinarily this would go in hiera/service/rsv.yaml, but that is actually for
+# a different service; this host should never have been named rsv1
+hiera::exec:
+  httpd_condrestart:
+    command: /sbin/service httpd condrestart
+    refreshonly: true
+
+hiera::file:
+  /etc/grid-security/http:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755

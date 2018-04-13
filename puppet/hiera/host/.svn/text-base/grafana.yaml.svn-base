@@ -1,0 +1,33 @@
+# Resources specifically for host grafana.grid.iu.edu
+---
+hiera::certificate:
+  event.grid.iu.edu:
+    cert:
+      path: /etc/grid-security/host/cert.pem
+      source: puppet:///modules/hiera/certificates/grafana.grid.iu.edu_cert.pem
+      owner: grafana
+      group: grafana
+      mode: 0644
+      replace: true
+    key:
+      path: /etc/grid-security/host/key.pem
+      content: |
+        ENC[PKCS7,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]
+      owner: grafana
+      group: grafana
+      mode: 0600
+      replace: true
+
+hiera::file:
+  /etc/grid-security/intermediate:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/intermediate/incommon.pem:
+    source: puppet:///modules/hiera/certificates/intermediate_incommon.pem
+    ensure: present
+    owner: root
+    group: root
+    mode: 0644
+    replace: true

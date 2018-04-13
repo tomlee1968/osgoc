@@ -1,0 +1,8 @@
+---
+hiera::file:
+  /etc/profile.d/login_warnings.sh:
+    ensure: present
+    source: puppet:///modules/hiera/profile/login_warnings.sh
+    owner: root
+    group: root
+    mode: 0755

@@ -1,0 +1,390 @@
+Puppet Type Reference
+
+Tom Lee <thomlee@iu.edu> 2011/10/19
+
+Here is some basic syntax information about what I call the "Big Four" resource
+types in Puppet: exec, file, package, and service.  95% of what anybody uses
+Puppet for will use only these types.
+
+Other types?
+============
+
+Yes, there are other types that we use around here (at OSG Operations).  We use
+'ssh_authorized_key' to synchronize SSH public user keys.  Occasionally we will
+use 'augeas' to modify config files.  And we use 'tidy' to keep the filebuckets
+from growing without bound.
+
+There are some types that we tried but decided not to use.  We never use 'cron'
+because it can only put its crontabs in the root account crontabs file
+('crontab -e') and not in /etc/cron.d, which is easier to find.  We tried
+having Puppet manage the SSH public host keys with the 'sshkey' resource type,
+but that requires two Puppet runs to get a new key from one host to another:
+one to get it from the new host to the server and one to get it from the server
+to every other host.
+
+Refreshes
+=========
+
+I should mention something about "refreshes."  In Puppet, a "refresh" is
+basically an event that can be sent from one resource to another, although only
+the 'exec', 'mount', and 'service' types can accept refreshes.
+
+The writers of Puppet invented refreshes for restarting a service after
+changing its config files: a refresh sent to a 'service' resource causes that
+service to restart.
+
+You can set up an 'exec' resource to take effect only when sent a refresh and
+never otherwise.  You do this with the 'refreshonly' parameter (more about this
+when we focus on 'exec' resources below).
+
+There are exactly two ways refreshes can happen: Refreshes are generated when
+the 'notify' parameter sends a refresh or the 'subscribe' parameter requests
+one.
+
+A refresh sets a flag on the resource that receives it, and sending it another
+refresh won't have any additional effect.  A resource that gets multiple
+refreshes during a single Puppet run will still only refresh once.
+
+The Big Four
+============
+
+And now, here they are, the Big Four.  I'll talk about the 'exec', 'file',
+'package', and 'service' resource types, in alphabetical order.  For each
+resource type in Puppet there is a 'namevar': this is the parameter whose value
+the resource gets its name from, unless the name is specifically defined.
+
+*** exec: Execute a command
+  namevar: command
+
+The Puppet people don't like the 'exec' resource and wish they could eliminate
+it.  They keep implementing other resource types in hopes that people will
+switch to using those instead of 'exec', but people keep coming up with uses
+for 'exec' that don't fit into the other types.  If there's another resource
+type that works for you, use it -- it probably has some nice automatic goodness
+that you can't replicate easily with 'exec' anyway.  But sometimes there's just
+nothing better than 'exec'.
+
+Unless you use the parameters to tell Puppet otherwise, every time it runs,
+Puppet will execute the command from every 'exec' resource every time it runs.
+This is why the documentation urges you (and I agree with it) to make your
+'exec' definitions "idempotent" -- which is a term from linear algebra
+describing a matrix that is equal to its square.  What they mean is that
+processing an 'exec' resource twice (or thrice, or infinitely many times)
+should produce the same exact effect as processing it once.  There are several
+ways to accomplish this, as seen in the examples below.
+
+# Run <command> (this is a BAD EXAMPLE, as nothing prevents it from running
+# every time):
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+}
+
+# Runs only if <createdpath> is not present -- good if <command> creates the
+# file <createdpath>:
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  creates => '<createdpath>',
+}
+
+# Runs only if <test> returns a true value (remember that in a shell context,
+# true means an exit value of zero):
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  onlyif => '<test>',
+}
+
+# Runs only if <test> returns a false (nonzero) value:
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  unless => '<test>',
+}
+
+# Runs only if it receives a refresh:
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  refreshonly => true,
+}
+
+# Runs only if a resource of type 'foo' named 'bar' runs first:
+exec {'<command>':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  subscribe => Foo['bar'],
+  refreshonly => true,
+}
+
+# There is a problem with Puppet in that all modules share the same namespace
+# -- that is, if I make different modules containing 'exec' resources that need
+# to execute the same command, there will be Puppet syntax errors, complaining
+# of multiple exec resources with the same name.  What seems to work is
+# extending the namespace:
+exec {'<module>::service iptables restart':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  command => 'service iptables restart',
+  refreshonly => true,
+}
+
+# An equivalent way to do this using the 'alias' metaparameter:
+exec {'service iptables restart':
+  path => '/sbin:/bin:/usr/sbin:/usr/bin',
+  alias => '<module>::service iptables restart',
+  refreshonly => true,
+}
+
+*** file: Create or delete a file, directory, or symlink
+  namevar: path
+
+If you need Puppet to create or delete a file, directory, or symbolic link,
+this is your type.  This is also the type to go to if you want to make sure a
+file's contents are synchronized across all hosts.  You can also make
+templates, so a file will be the same on all hosts except that it will have
+(for example) its hostname somewhere in it.
+
+# Install file <module>/files/<sourcefile> from Puppet server (replace=false:
+# only if file not already present):
+file {'<destpath>':
+  source => 'puppet:///modules/<module>/<sourcefile>',
+  owner => '<user>',
+  group => '<group>',
+  mode => '<mode>',
+  replace => true|false,
+}
+
+# Creates a file with the given content:
+file {'<destpath>':
+  content => 'This is a test file',
+  owner => '<user>',
+  group => '<group>',
+  mode => '<mode>',
+}
+
+# Make sure a file is deleted:
+file {'<destpath>':
+  ensure => 'absent',
+}
+
+# Create a directory:
+file {'<destpath>':
+  ensure => 'directory',
+  owner => '<user>',
+  group => '<group>',
+  mode => '<mode>',
+}
+
+# Create a symlink:
+file {'<destpath>':
+  ensure => 'link',
+  target => '<linkdestpath>',
+}
+
+# Create a file based on <module>/templates/<template> on the Puppet server:
+file {'<destpath>':
+  content => template('<module>/<template>'),
+  owner => '<user>',
+  group => '<group>',
+  mode => '<mode>',
+  replace => true|false,
+}
+
+*** package: Make sure a package is installed or uninstalled
+  namevar: name
+
+You can ensure that a software package is installed (or not installed) using
+the 'package' type, which utilizes YUM on RHEL systems.
+
+# Install a package (does nothing if the package is already installed, even if
+# it's not the latest version):
+package {'<packagename>':
+  ensure => 'present',
+}
+
+# Install a package and make sure we always have the latest version (does
+# nothing if the package is already installed and is the latest version):
+package {'<packagename>':
+  ensure => 'latest',
+}
+
+# Remove a package (does nothing if the package is not already installed):
+package {'<packagename>':
+  ensure => 'absent',
+}
+
+*** service: Make sure a service is (not) running or enabled/disabled
+  namevar: name
+
+A "service" is anything that has an initscript -- on RHEL systems, it's
+anything that you can use the 'chkconfig' and 'service' commands on.  Typically
+the difference between a service and anything else is just the fact that
+services can be set to start at boot time.  A service often starts a daemon,
+but not always.
+
+# Make sure a service is enabled (set to start at boot):
+service {'<servicename>':
+  enable => true,
+}
+
+# Make sure a service is disabled (will not start at boot):
+service {'<servicename>':
+  enable => false,
+}
+
+# Make sure a service is running now:
+service {'<servicename>':
+  ensure => 'running',
+}
+
+# Make sure a service is currently stopped:
+service {'<servicename>':
+  ensure => 'stopped',
+}
+
+Note: Some services have better initscripts than others.  Puppet assumes crappy
+initscripts.  If a service has a good initscript, you can use parameters like:
+
+  hasrestart => true,
+
+which specifies that 'service <service> restart' works.  Puppet will use a
+'stop' followed by a 'start' if this parameter is not set to true.
+
+  hasstatus => true,
+
+is another parameter that Puppet assumes is false unless you set it true; it
+means that 'service <service> status' actually returns an accurate value and
+reflects whether the service is really running or not.  Otherwise, Puppet greps
+through the process table for the service as a last resort.  The 'pattern'
+parameter is a regular expression for Puppet to use to find the appropriate
+process in the process table; it defaults to the service name, but you and I
+both know of services whose processes differ from their names.  (Like, for
+example, Puppet, whose service is named 'puppet' and whose process is named
+'puppetd'.)
+
+There are, of course, services that do not start processes.  The 'network'
+service, for example, brings up or takes down network adapters, but it leaves
+no persistent processes or daemons running.  But Puppet has a recourse if the
+OS gives you no support here: you can also specify parameters 'status',
+'start', 'stop', and 'restart' if there is no initscript or if the initscript
+is particularly awful.  Their values should be shell commands that perform
+these functions.
+
+Note 2: 'Service' resources can accept refreshes -- in fact, they're the
+resource type that refreshes were invented for.  If a service gets a refresh
+(via its 'subscribe' parameter, or via another resource sending it a 'notify'),
+it will be restarted automatically.  You would need to have a service resource
+for it in order for this to happen, but it could be empty of parameters.  You
+might want to test its initscript to make sure 'restart' and 'status' work,
+then put in 'hasrestart => true' and 'hasstatus => true'.
+
+Note 3: Using the 'status', 'start', 'stop', and 'restart' parameters, you
+could invent a "synthetic service" that has no actual initscript.  All you'd
+need would be a concept of whether your "service" was currently "running" or
+not and a way to test for this using a shell command.  For example, this would
+be yet another way to administer cron jobs -- 'start' could put a file in
+/etc/cron.d, 'stop' could remove that file, and 'status' could check for its
+presence.  The 'restart' parameter wouldn't be particularly useful for this
+purpose, but if you don't set it (to some harmless shell command like
+'/bin/true'), a refresh sent to this "synthetic service" would cause Puppet to
+look for an initscript that isn't there.  Or you could make sure 'hasrestart'
+was set to false, so Puppet would just issue the 'stop' command followed by the
+'start' command.
+
+*** Metaparameters: parameters available to every resource type
+
+This is a list of parameters that any resource can use.  There are actually
+several others, but these are the most commonly used ones.
+
+** alias -- renames the resource
+
+file {'/etc/ssh/ssh_known_hosts':
+  source => 'puppet:///modules/ssh_hosts/ssh_known_hosts',
+  owner => 'root',
+  group => 'root',
+  mode => '0600',
+  alias => 'ssh_hosts',
+}
+
+This resource could then be referred to as File['ssh_hosts']; ordinarily other
+resources would have to refer to it as File['/etc/ssh/ssh_known_hosts'].
+
+** before -- makes sure this resource completes before the referenced one
+
+foo {'bar':
+  before => Baz['quux'],
+}
+
+This would ensure that Puppet would perform Foo['bar'] before Baz['quux'].
+'before' is the opposite of 'require'.  'before' is like 'notify' except that
+it does not cause the referenced resource to refresh.
+
+** noop -- deactivates resource
+
+foo {'bar':
+  noop = true,
+}
+
+This would prevent this resource from having any effect.  This is useful for
+temporarily deactivating a resource without having to delete it or fully
+comment it out.
+
+** notify -- refreshes the referenced resource after this one completes
+
+foo {'bar':
+  notify => Baz['quux'],
+}
+
+'notify' is similar to 'before' except that 'notify' triggers a refresh in the
+target.  In this example, Baz['quux'] would be told to refresh.  Only some
+types accept refreshes, but one important example is 'exec' -- an 'exec'
+resource marked with 'refreshonly => true' would be processed if it were
+targeted with a 'notify', but not if a 'before' referenced it.  The 'mount' and
+'service' types also support refreshing.
+
+** require -- ensures that the referenced resource runs before this one
+
+foo {'bar':
+  require => Baz['quux'],
+}
+
+Puppet would make sure that Baz['quux'] was processed before Foo['bar'].  This
+is the opposite behavior to 'before', and this is similar to 'subscribe' except
+that in this case Foo['bar'] would not be told to refresh.
+
+** schedule -- limit the days/times when the resource will process
+
+Create a resource of type 'schedule', and refer to it in another resource with
+this metaparameter, and that resource will only run when that schedule allows.
+
+schedule {'twice_a_week':
+  period => 'weekly',
+  repeat => 2,
+}
+
+foo {'bar':
+  schedule => 'twice_a_week',
+}
+
+This would cause Puppet to process Foo['bar'] twice a week.  Note that you
+don't refer to the schedule as Schedule['twice_a_week'].
+
+** subscribe -- asks for a refresh when the referenced resource runs
+
+Similar to 'require', this ensures that Puppet will not process this resource
+until it has done the referenced one, but Puppet will also send a refresh to
+this one.  This is the opposite of 'notify'.
+
+foo {'bar':
+  subscribe => Baz['quux'],
+}
+
+This example states that Foo['bar'] will not run until after Baz['quux'] has,
+and when it does, it will send Foo['bar'] a refresh.
+
+** tag -- adds a custom tag to the resource
+
+It can sometimes be useful for debugging to tag certain resources with custom
+tags so they can be selected or deselected from the 'puppet agent' command
+line.  This metaparameter does just that.
+
+*** Possibly useful note:
+
+Debug prints can happen in Puppet rules!  Do this:
+
+notify{"message":}

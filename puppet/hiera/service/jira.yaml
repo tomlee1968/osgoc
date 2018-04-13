@@ -1,0 +1,14 @@
+---
+hiera::exec:
+  rebuild_jira_keystore:
+    command: /usr/bin/openssl pkcs12 -export -in /etc/grid-security/host/cert.pem -inkey /etc/grid-security/host/key.pem -passout pass:3c894242 -out /etc/jira.keystore
+    refreshonly: true
+    notify:
+      - Service[jira]
+
+hiera::service:
+  jira:
+#    ensure: running
+#    enable: true
+    hasrestart: true
+    hasstatus: true

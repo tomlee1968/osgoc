@@ -1,0 +1,3 @@
+[load]
+  env.load_warning 30
+  env.load_critical 120

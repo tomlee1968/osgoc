@@ -1,0 +1,72 @@
+[sssd]
+services = nss, pam
+config_file_version = 2
+
+# Number of times services should attempt to reconect in the event of
+# a crash or restart before they give up
+reconnection_retries = 2
+
+# If a back end is particularly slow, you can raise this timeout here
+sbus_timeout = 30
+
+# SSSD won't start unless you configure at least one domain.  Add new
+# domains as [domain/<NAME>] sections, and then add the
+# (comma-separated) list of domains to the "domains" attribute.
+domains = default
+
+[domain/default]
+auth_provider = ldap
+chpass_provider = ldap
+id_provider = ldap
+cache_credentials = True
+ldap_schema = rfc2307bis
+ldap_referrals = false
+ldap_group_member = uniquemember
+ldap_group_nesting_level = 2
+ldap_uri = ldap://192.168.96.4/
+#ldap_backup_uri = ldap://192.168.97.12/
+ldap_network_timeout = 2
+ldap_search_timeout = 2
+ldap_opt_timeout = 2
+dns_resolver_timeout = 2
+ldap_search_base = dc=goc
+ldap_default_bind_dn = cn=manager,dc=goc
+ldap_default_authtok_type = password
+# This is a cleartext password!  Make sure this file is not world-readable.
+ldap_default_authtok = <%= var["ldap_secret"] %>
+
+# This requires CA certs to be in /etc/pki/ldap, and they must have
+# hash symlinks -- authconfig can make these, or you can use
+# authconfig's cacertdir_rehash script to do it yourself, or you can
+# be absolutely medieval about it by using 'openssl x509 -hash -noout'.
+ldap_tls_cacertdir = /etc/pki/ldap
+
+# The 'simple' access provider just takes its data from wherever else
+# we're getting data (LDAP in this case).
+access_provider = simple
+# A comma-separated list of groups to allow.  If this is commented,
+# access won't be restricted by group.  Note that locally-defined
+# /etc/passwd users may not be affected by this, if "files" appears
+# before "sss" on the "passwd" line in /etc/nsswitch.conf (and it
+# usually does).
+simple_allow_groups = goc,shell-<%= goc_accesshost %>
+
+[nss]
+# The following prevents SSSD from searching for the root user/group
+# in all domains (you can make this a comma-separated list of system
+# accounts that are always going to be local users defined in
+# /etc/passwd, or that you want to filter out for some other reason).
+filter_groups = root
+filter_users = root
+reconnection_retries = 3
+
+[pam]
+reconnection_retries = 3
+
+[sudo]
+
+[autofs]
+
+[ssh]
+
+[pac]

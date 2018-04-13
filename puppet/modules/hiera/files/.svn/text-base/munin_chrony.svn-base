@@ -1,0 +1,142 @@
+#!/usr/bin/python
+
+# munin-chrony -- Munin plugin for chrony
+# Tom Lee <thomlee@iu.edu>
+# Begun 2015-11-25
+
+# As with all Munin plugins, this script can be called either with no
+# arguments, meaning that it should return the values of its Munin quantities,
+# or with the single argument "config", meaning that it should return metadata
+# about itself and its Munin quantities.
+
+# As with all Munin plugins, it is expected that this script be located
+# somewhere else and symlinked to from /etc/munin/plugins.
+
+import os, re, sys, syslog
+from subprocess import Popen, PIPE
+
+def initialize():
+
+    """Sets things up for the run of the script.
+
+    Opens syslog and gets the value of cmdarg."""
+
+    global cmdarg
+    # Open syslog for error message tracking
+    syslog.openlog("munin-chrony", 0, syslog.LOG_DAEMON)
+
+    # Try to get the command-line argument, if there is one (usually either
+    # 'config' or nothing)
+    try:
+        cmdarg = sys.argv[1]
+    except IndexError:
+        # It's not actually an error if this is out of range -- it just means
+        # there wasn't an argument, so don't run in config mode
+        cmdarg = ""
+
+def run_command(cmd):
+
+    """Run a shell command and return its output as a list of strings.
+
+    Runs a shell command.  If there is an error in running that
+    command, the exception handling is frankly not even there.
+    Returns a list of strings, one for each nonblank line of output
+    (blank lines are skipped)."""
+
+    return filter(lambda x: x, Popen(cmd.split(), stdout = PIPE).communicate()[0].split("\n"))
+
+def get_tracking():
+
+    """Get the output of 'chronyc tracking' and return it as a dictionary.
+
+    Goes through the output of the 'chronyc tracking' command and
+    filters out anything that doesn't end in 'ppm' or 'seconds'.
+    Returns a dictionary with keys 'ppm' and 'seconds', each of which
+    contains a further dictionary with keys and numeric values.  Those
+    keys will be the lowercase versions of the labels from chronyc,
+    with any nonalphanumeric characters replaced with an
+    underscore."""
+
+    output_lines = run_command("chronyc tracking")
+    tdata = {}
+    for line in output_lines:
+	(label, data) = line.split(":", 1)
+	value = data.strip().lower()
+	if value.endswith("ppm") or value.endswith("seconds"):
+	    key = re.sub(r"[^a-z0-9]", "_", label.strip().lower())
+	    if key == "update_interval":
+		continue
+	    (value, unit) = value.split(" ", 1)
+	    if unit not in tdata:
+		tdata[unit] = {}
+	    tdata[unit][key] = {"label": label.strip(), "value": value}
+    return tdata
+
+def do_config():
+
+    """Print plugin metadata, because the script was called with 'config'.
+
+    The script was called with the command line argument 'config', which means
+    that a Munin plugin should print its metadata, and that's what we'll do
+    here.
+
+    """
+
+    tracking = get_tracking()
+    for unit in ("ppm", "sec"):
+	tunit = unit
+	if unit == "sec":
+	    tunit = "seconds"
+	print "multigraph chrony_%s" % unit
+	print "graph_title NTP (Chrony) Statistics (%s)" % unit
+	print "graph_vlabel %s" % unit
+	print "graph_args --base 1000"
+	print "graph_category time"
+	print "graph_info NTP (Chrony) tracking statistics (the ones measured in %s)" % tunit
+	for key in tracking[tunit]:
+	    item = tracking[tunit][key]
+	    print """%s.label %s
+%s.draw LINE2
+%s.info %s""" % (key, item["label"], key, key, item["label"])
+	print
+    return 0
+
+def do_normal():
+
+    """Print the data as usual.
+
+    The script was called without a command-line argument, which to a Munin
+    plugin should signal that it's time to print the data as usual.  This is
+    what will happen most of the time the plugin is called."""
+
+    tracking = get_tracking()
+    for unit in ("ppm", "sec"):
+	tunit = unit
+	if unit == "sec":
+	    tunit = "seconds"
+	print "multigraph chrony_%s" % unit
+	for key in tracking[tunit].keys():
+	    value = tracking[tunit][key]["value"]
+	    print "%s.value %f" % (key, float(value))
+	print
+    return 0
+
+def finalize():
+
+    """Closes things down if they need it.
+
+    This consists of closing syslog."""
+
+    # Close syslog like a good citizen
+    syslog.closelog()
+
+###############################################################################
+# Main
+###############################################################################
+
+initialize()
+if cmdarg.lower() == 'config':
+    do_config()
+else:
+    do_normal()
+finalize()

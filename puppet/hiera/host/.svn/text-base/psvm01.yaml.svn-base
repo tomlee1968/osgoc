@@ -1,0 +1,36 @@
+---
+ssh_userkeys::keys:
+  alake@es.net:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQCL30TMJNwPS3mSpUaPWaLXQActoGpmyMSF0gkLuPGXctORfexYpbiEN0Ez/1oYx84GpaqEbmjYJef+T5eodDFV+rljhnudntwlR43NEd4YmD4NwpGPVV1cXUisNFM9l+MkXqgRcrRpc7Zz2G+GimsUFuaAhO5C/I2t2DLuJDrjViHkSbtRfL0tsoo8gsI3sVHgszQyXVLQ+rDlcPN74DZTllejvJoZjwpt8KAdSaFnMKqIIC8qbg184RJIHp9vXZuqWo3GN3500//uKOAyzFfmmIIFIEUP7DXn67ToHfl3gVYjhyWZNAHcdDSBLciMaCzx1Rh6jZgM18CpHX1Oa2od
+  emfajard@ucsd.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQC1szA9Bc9WB4eb7oVghMaoySQXcfDx57aBEtn9YmhzSHEgNOAfpRVndtKGR+Oo9oMC48Bcds4vbVN1euNKh0XoqHsj7iqeAMAU2m+4hULd/YtxrmjlOaHswCy/AhykbbmGp85FF3A3KtSNnr8M8fb4DUYJ9rwB6Ur5BBGFYcs/8Kqm7FOEdRqRX8DqF529aG6rkugHx55FtxVzBPhwir+S+9yWvoGwxMZL7LaPQhBRnaDWejMKKvpD8pv3W0uHQNkEdKn4JZUCMeIhDPn8tlRicoK3j80WswbgMnbIRRvtXfZBh6kBMnvbAdXGvjBUzmJRl5d4Fr+0QqKLc4qDxrKp
+  mbabik@lxadm04.cern.ch:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEAqQrS67FYqubhY6fX85Biy41jZTkdBKbT18bPm9lBpQ5aTSeWk6SR2ossiV6mbOjtjXlYxEFIhBAs2+GMP6JelI1bY7+bkyL5oD7EqK3t5FtklvxLJMkBpXmRHOKVZiK2k9YjsVV1VSiADzdxoEWqfeu7C6xorGvKvLsSntuR/cF8pVxwfPjiEYeZK9bwfOv+wDHeek7RIGIUJr/gxY5AVYiuFW+2y6EbNDXdtr1xIaG3wTWk8VIh4Re6BDgLhUmejVYHVFnFnyCeJD++8T4EdzGISeWcISNP0W81OmvKMLB1+RFS11IQyK4O/4IW5t1IX4+SmHbcFVQusja8HrHQLQ==
+  "Shawn's keys":
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAII6PIYfmYq45UG9qXvZ+buntuiGfntM5pyXKrPGiryHKSdBWnMwRtNbRYy0p59MqPfXQjhzDC2ZqHaTQCStsHvgANYx2CLaFVkcuaAOp2T1zjbYp9E6UvWJRtGcw0oILuRnIuC9X3LRPV4rVK+q5sfatRrNZBFw4zgZU+QdLJL3AAAAFQDLWxvq5Ja6tFAAYJa9AVmhqfMbGwAAAIAgfP1udFFA08Ojbs4pbwOJfX4HOM8ZUaJW22rGAmwCXe5EF5RSgNz5/3w7lCeKcmq0IFSkGLFmzjymGJxUAjsY7dF/gN9uvLeacikEb7sdgJzg1pTz8I8RQWxdrpwkZZAkDA7ms3tIMt1Sm3fLfVAg25/FTTG1gozmLMOmp34VXQAAAIAVkqJne5EuFvc6FY9X7Cvut1xwTDZvN16baNBa8OWNX0AyfUsXcz/K4Hd2tkUntBMajxl5/Cypi/iQ6utQRC08t4IwEfLW+K69HnCeoWchHTgiBeYGf6bB1pPeRQcvirhooUhceT+JwkVAChDjRXYnOs0qg2zN+zaUluDK+sK9AA==
+
+ssh_userkeys::users:
+  alake:
+    home: /home/alake
+    group: alake
+    keys:
+      - alake@es.net
+  emfajard:
+    home: /home/emfajard
+    group: emfajard
+    keys:
+      - emfajard@ucsd.edu
+  mbabik:
+    home: /home/mbabik
+    group: mbabik
+    keys:
+      - mbabik@lxadm04.cern.ch
+  smckee:
+    home: /home/smckee
+    group: smckee
+    keys:
+      - "Shawn's keys"

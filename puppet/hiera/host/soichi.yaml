@@ -1,0 +1,4 @@
+---
+hiera::certificate_exclude:
+  - 'help@opensciencegrid.org'
+

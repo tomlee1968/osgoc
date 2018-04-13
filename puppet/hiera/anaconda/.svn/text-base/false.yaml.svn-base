@@ -1,0 +1,140 @@
+# Rules for when 'anaconda' is false; i.e., we're not building a system
+---
+hiera::exec:
+  create_rubysitedir:
+    command: /bin/mkdir -p "%{::rubysitedir}"
+    onlyif: test ! -e "%{::rubysitedir}"
+
+hiera::file:
+  #
+  # This is so Ansible can tell whether Puppet has run yet.
+  /opt/etc/puppet_last:
+    content: "This file's existence indicates that Puppet has run since this OS was installed."
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+    require:
+      - File[/etc/sudoers.d/goc]
+  #
+  # All the iptables stuff can change, and it should change everywhere:
+  /etc/iptables.d:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/iptables.d/00-global-clear:
+    source: puppet:///modules/hiera/iptables/00-global-clear
+    owner: root
+    group: root
+    mode: 0744
+    notify:
+      - Exec[chmod_iptables_rpmsaves]
+    replace: true
+  /etc/iptables.d/10-global-chains:
+    source: puppet:///modules/hiera/iptables/10-global-chains
+    owner: root
+    group: root
+    mode: 0744
+    notify:
+      - Exec[chmod_iptables_rpmsaves]
+    replace: true
+  /etc/iptables.d/20-global-policies:
+    source: puppet:///modules/hiera/iptables/20-global-policies
+    owner: root
+    group: root
+    mode: 0744
+    notify:
+      - Exec[chmod_iptables_rpmsaves]
+    replace: true
+  /etc/iptables.d/30-global-rules:
+    source: puppet:///modules/hiera/iptables/30-global-rules
+    owner: root
+    group: root
+    mode: 0744
+    notify:
+      - Exec[chmod_iptables_rpmsaves]
+    replace: true
+  /etc/iptables.d/90-global-end:
+    source: puppet:///modules/hiera/iptables/90-global-end
+    owner: root
+    group: root
+    mode: 0744
+    notify:
+      - Exec[chmod_iptables_rpmsaves]
+    replace: true
+  /etc/iptables.d/README:
+    source: puppet:///modules/hiera/iptables/README
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+  /etc/iptables.d/setup:
+    source: puppet:///modules/hiera/iptables/setup
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+  "%{::rubysitedir}/facter":
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+    require:
+      - Exec[create_rubysitedir]
+  # This is placed at the end of the install process, causing the 'anaconda'
+  # fact to be false, so if it isn't there this file won't be run, so this is
+  # kind of a chicken/egg resource.  However, this is an example of
+  # interpolating variables in Hiera.
+  "%{::rubysitedir}/facter/anaconda.rb":
+    content: |
+      Facter.add(:anaconda) do
+        setcode do
+          begin
+            false
+          rescue LoadError
+            nil
+          end
+        end
+      end
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+
+hiera::service:
+  autofs:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  confsync-dyndns:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  dnsmasq:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  munin-node:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  network:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  sshd:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  sssd:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true

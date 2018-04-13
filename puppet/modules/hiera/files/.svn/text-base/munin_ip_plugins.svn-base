@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# Set up the appropriate Munin "ip_" plugins
+# Tom Lee <thomlee@iu.edu>
+# Begun 2015-10-26
+
+# This file was originally a couple of Puppet rules, but they were complicated
+# enough that I made them a separate script run by cron.
+
+# Munin "ip_" plugins whose IPs don't fall into one of these prefixes won't be
+# affected:
+IPV4PFXS=("129.79.53.0/24" "192.168.96.0/22")
+IPV6PFXS=("2001:18e8:2:6::/64" "fd2f:6feb:37::/48")
+
+function ipv4addrs() {
+    ip -o -4 addr show | sed -re '/inet /!d' -e '/127\.0\.0\./d' -e '/secondary/d' -e 's~/.*$~~' -e 's/^.*inet[[:space:]]+//' | sort | uniq
+}
+
+function ipv6addrs() {
+    ip -o -6 addr show | sed -re '/inet6 /!d' -e '\~::1/~d' -e '/secondary/d' -e '/scope link/d' -e 's~/.*$~~' -e 's/^.*inet6[[:space:]]+//' | sort | uniq
+}
+
+function ipcalc_prefix() {
+    local PREFIX
+    eval "$(ipcalc -p $1)"
+    echo $PREFIX
+}
+
+function ipcalc_network() {
+    local NETWORK
+    eval "$(ipcalc -6 -n $1)"
+    echo $NETWORK
+}
+
+function munin_ips() {
+    pushd /etc/munin/plugins >/dev/null
+    for iplink in ip_*; do
+	local ip=${iplink/#*_/}
+	if ipcalc -s -4 -c $ip; then
+	    
+	    IPV4MUNIN=("${IPV4MUNIN[@]}" $ip)
+	elif ipcalc -s -6 -c $ip; then
+	    IPV6MUNIN=("${IPV6MUNIN[@]}" $ip)
+	fi
+    done
+    popd >/dev/null
+}
+
+IPV4MUNIN=()
+IPV6MUNIN=()
+munin_ips
+
+echo ${IPV4MUNIN[*]}
+echo --
+echo ${IPV6MUNIN[*]}
+ipcalc_prefix 129.79.53.26/24
+ipcalc_network 129.79.53.26/24
+ipcalc_prefix 2001:18e8:2:6::43e/64
+ipcalc_network 2001:18e8:2:6::43e/64
+exit 0
+
+IPV4ADDRS=($(ipv4addrs))
+for ip in "${IPV4ADDRS[@]}"; do
+    echo $ip
+done
+echo ${IPV4ADDRS[*]}
+#IPV4MUNIN="$(ls /etc/munin/plugins/ip_{129,192}.*)"
+
+if [[ $(ls /etc/munin/plugins/ip_{129,192}.* | sed -re 's/.*_//') != ${IPV4ADDRS[*]} ]]; then
+    rm -f /etc/munin/plugins/ip_{129,192}.*
+    for ip in $IPV4ADDRS; do
+	ln -s ../../../usr/share/munin/plugins/ip_ /etc/munin/plugins/ip_$ip
+    done
+fi
+
+IPV6ADDRS="$(ipv6addrs)"
+echo $IPV6ADDRS
+
+if [[ $(ls /etc/munin/plugins/ip_{2001,fd2f}:* | sed -re 's/.*_//') != $IPV6ADDRS ]]; then
+    rm -f /etc/munin/plugins/ip_{2001,fd2f}:*
+    for ip in $IPV6ADDRS; do
+	ln -s ../../../usr/share/munin/plugins/ip_ /etc/munin/plugins/ip_$ip
+    done
+fi

@@ -1,0 +1,50 @@
+---
+hiera::certificate:
+  oasis-login-itb.grid.iu.edu:
+    cert:
+      source: puppet:///modules/hiera/certificates/oasis-login-itb.grid.iu.edu_cert.pem
+      path: /etc/grid-security/host/cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+    key:
+      content: |
+        ENC[PKCS7,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]
+      path: /etc/grid-security/host/key.pem
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+
+ssh_userkeys::keys:
+  caballer@rsec00.rhic.bnl.gov:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEAyNVVQHhzAoTTE8yfeU8tRMqOQ6MNt6Qz+xJgUj40bVKsRX06Ji9CpGsTB4c0vaEicguQ/awiMpc355CEsfBh1xPzkjh7kzsKzTXsj7dTBroIgwrxrKOHQDVEe2TAh++ebhvfn641LBRHov4j/dk6a9F9YqQVW0H4JdT8fmTFf5GYwI3usNiqCxxRmgmOUPl9/X9E/6A7hCnX4Ma5quu06KHgcrdxBUh1bwMx2ebgQ+haNT1ExSkARwrnsgzSkuLeI+1XUGtv8ZajP5JZrcDjEFlzYmFDy82PYgjgfGepUxC6lBgVOevhe6ZHqT/1V1qiAWvRslPH91Lc+7W88ETTeQ==
+  caballero@dh06.s20.bnl.gov:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAI1Q6LDZGwWGvLvciwnLae9IM91mopGQzHY1WX5zJbVSBMp3gyIdwIZhiF3yNzpaRfcdnfwxW3B5uBMDdCgG+qvrt49MGp8RTmFF6DqEhiK7e2qsp0E+3Da4mEA5g6gNCnd6Jb2yhCJpizqBmOX0RiqYwE8FqiOE+ppOtQ/bwKMnAAAAFQC4unI2UJiLewUjuWGDLWSSEYJ1cQAAAIBi1JEqGSEEzJ4BWSZ1vNKW6yhnTyOlxFneGKPe6i8Ga5Aj3iQHIk2i+Z9R8M93WwwQ9sZOQYp438gAXfra6Cft4+GJDSQ7MtMC2nmTg6JZKb1+TrCnPLz2pVULi3FU+khqbOZHHGfodjfUUgRIO3brH65khg2mmLckAQdfjNvN4QAAAIAvb/NAqv/gxRjsCB5IAHoxmmuFID8xaBC8hYWl7ZIwibiDilau4Yjt7w50J3qcDopQ8l8cWRcUQTrq0P3/Yga6YFuTyjjqX1VvhO9tXPAMDHn/d0/KuplX4Bt0pY87DilY/2ZM/EOxvAj/2N116TeYNfLxH/01AvAtzSrubB9XNg==
+  dwd@dwd.drdykstra.us:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDBBhR/0IPrMfKx4JWcsTeJUTilom0sohq3ezS525KRR1RD7JMUUVMv+/a9lYk3ixbcWlGan3TK+T91NZrRXunu7ddT23g2U/HrXmc07x8asPA/fKRPf3RTTNE5mn7+k0TJAKVcMML17ByyfxA2bYVA9WpHT4leiz5MWXgAKt4Y9+JzK9yM/QXGiQsF2chwxvRlXFml88b3WPMMslzFQX/YSTT/KQKKq0CHk2zgLHW+WXovormidCp0RFph5POli2ukd15KeMYaxJM93Eurz9/oNcRNYEzkks4kF3KLNwuyVPua+Uh8MhhbA8OMWwJsCbbt8QkkBbb47kImMgOYJLgR
+  Transition-Key-Marian-Zvada:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEAw8wiK9to1yW0enHVQy7CnlCJOsrPXQRO+BfYipx2UFWvFjVLukZVpJJ9b6csb19a4DClJjoYJfgG+KUtiQD8BKaRwPYgg/sKa54711qBXML4GKnuBL6EczhoDxidnHZF/fMOkFfZ0sB2WzUSz16StrpwhwPwwg5v4gqJTIOGE1jfhASOHqJcVUvLS0RW9EEIcXVDNCWYEC9lxeDzpyBAhMeBywwub0n/lUi6dMwpvVUXhr1NcJoLlnIk1bboa3ZQU77QglL+rFZAmhe5pCFyI0dapAXMIeyYazyhKies1lfz900sUTphxqmXs2s9coDh3fLp7Vcb9qENXsnUZLdfew==
+
+ssh_userkeys::users:
+  dwd:
+    home: /home/dwd
+    group: dwd
+    keys:
+      - dwd@dwd.drdykstra.us
+  jcaballero:
+    home: /home/jcaballero
+    group: jcaballero
+    keys:
+      - caballer@rsec00.rhic.bnl.gov
+      - caballero@dh06.s20.bnl.gov
+  zvada:
+    home: /home/zvada
+    group: zvada
+    keys:
+      - Transition-Key-Marian-Zvada

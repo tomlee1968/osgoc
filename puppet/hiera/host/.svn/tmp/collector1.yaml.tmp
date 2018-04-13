@@ -1,0 +1,30 @@
+---
+hiera::certificate:
+  collector1.opensciencegrid.org:
+    cert:
+      source: puppet:///modules/hiera/certificates/collector1.opensciencegrid.org_cert.pem
+      path: /etc/grid-security/host/cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+    key:
+      content: |
+        ENC[PKCS7,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]
+      path: /etc/grid-security/host/key.pem
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+
+ssh_userkeys::keys:
+  blin@cs-wifiopen-92.cs.wisc.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDS4jk5XBtcsaqJruRK1OCuOVxmxRSsGsr7ePvQL95B3ZZ8i3XpeOs/R+wUyOrydEv8E3uluyclBM+QhWZH0KMuzWJ6KlKx1yaBTWT9iXO+/ovbarlDNLdtmfZs55bk9i0zt2rVt/gWTBrgWOYJjtYQZjtjhIWwaF5/bdcJjywTx6FC0/vguGHTBKEicERwVryyHo24KVapXGEiVO8q7bNZXdfbYW95dtHRYTRmzo2IjafmYY01zzFKMhSIN+Co/tWrAWXS1Tjt/WxxX8eE3/G9P9943oEfCpeesovdwMhPRk8FbZqgXVFMNhKLOgDzPn5/KbrrvCdlqfPqGz9HevJ/
+
+ssh_userkeys::users:
+  blin:
+    home: /home/blin
+    group: blin
+    keys:
+      - blin@cs-wifiopen-92.cs.wisc.edu

@@ -1,0 +1,8 @@
+---
+# As this is the Puppet server, we want to exclude the puppet::client
+# class that every other machine gets and include puppet::server
+# instead.
+classes:
+  - puppet::server
+classes_exclude:
+  - puppet::client

@@ -1,0 +1,306 @@
+How to Deal with the GOCIPtables Scripts
+By Tom Lee
+
+	This is just about the gociptables scripts and how they're organized.
+I hope this explains just what they have in them and how to use them.
+
+Basic Strategy
+==============
+
+	When the gociptables initscript is run in "start" or "restart" mode, it
+searches /etc/iptables.d for files set executable whose names begin with two
+digits and executes them in lexical order: a file named "00" would run before a
+file named "10", and a file named "15" would come after that, etc.  This allows
+different install and setup scripts to drop new firewall rules in place without
+having to try to edit the existing files.
+
+	Some of the files are maintained by Puppet; these are the ones with the
+string "global" in their filenames.  I could have called them anything (and,
+indeed, other files could be called anything, but please make it
+straightforward and descriptive), but I chose to put "global" in their names to
+make it clear to all that edits to these files would be overridden by Puppet.
+An effort is made to keep the "global" files from the "gociptables" RPM package
+identical to those in the Puppet repository and those in the stemcell images.
+It has become customary to make sure the string "local" appears in the names of
+files that are unique to a particular machine.  This has resulted in every file
+having either "global" or "local" in its name, but this is not strictly
+necessary.
+
+	There is a sample "50-local-rules" file that should probably not exist,
+as it contains nothing but commented-out lines anywhere, and its existence led
+to the creation of many "60-local-service-rules" files that really missed the
+point of the entire system.
+
+	Many services have been set up using a file called
+"60-local-service-rules", containing firewall rules specific to the service.
+The file is almost always called the same thing everywhere, but I don't like it
+for two reasons.
+
+	First, the "-rules" suffix is redundant, only adding to the filename's
+length without adding meaning.  If the service had separate "-chains" and
+"-rules" files (which is almost never the case), those suffixes would make
+sense to differentiate between the two, but if there is only one file, no
+suffix is required.
+
+	Second, the misguided uniformity and genericness of the filename
+actually misses the point of the entire strategy.  A uniform name is fine as
+long as there is only one service on the machine, but it is probably better to
+name a file "XX-local-<service>", as in "60-local-ntp" or "55-local-perfsonar".
+This is useful in case more than one service is installed on the same host,
+which is rare on VMs, but merely uncommon on hardware servers.  It could also
+be used in case we want layered firewall files with one set of rules specific
+to the service but global to all instances, and another set of rules specific
+to the instance (this has never happened, but could happen).
+
+	The entire set of scripts is written from the point of view that IPv6
+is "normal" and IPv4 is an exception -- this will become increasingly true as
+time goes by.  Environment variables, aliases and functions will have a "4"
+suffix when they pertain to IPv4; the IPv6 versions of these will have no such
+suffix.  I (re)wrote it this way in 2014 because I want things to become easier
+to deal with over time, not harder.
+
+The centralized iptables.d scripts and what they do
+===================================================
+
+	All gociptables scripts are in /etc/iptables.d -- the same files
+contain scripts defining both the ip6tables and iptables rules.  It might help
+for me to list exactly what the global scripts do.
+
+setup
+-----
+
+	This is meant to be sourced ("source /etc/iptables.d/setup" or
+". /etc/iptables.d/setup") from the other scripts.  It contains shortcuts and
+functions that make the others easier.  The shortcuts include:
+
+$IPTABLES: Just the full path to /sbin/ip6tables.  It's best not to assume that
+$PATH is set correctly in a script that is to be run by root.
+
+$IPTABLES4: Path to /sbin/iptables, the IPv4 equivalent.
+
+$ITF: Short for "$IPTABLES -t filter"; this shortens any command affecting the
+"filter" table.  For the other two tables ("mangle", and "raw"), there are also
+$ITM and $ITR.
+
+$ITF4: Short for "$IPTABLES4 -t filter" -- similar to $ITF for IPv4. Likewise
+there are also $ITM4 and $ITR4, and $ITN4 for IPv4's "nat" table.
+
+$ITFAI: Short for "$ITF -A INPUT".  The most common activity in these scripts
+is the appending of a rule to the "filter" table's "INPUT" chain.  There are
+also shortcuts for filter/OUTPUT ($ITFAO), filter/FORWARD ($ITFAF),
+mangle/PREROUTING ($ITMAPRE), and actually for all the tables' built-in chains.
+
+$ITFAI4: Short for "$ITF4 -A INPUT", and there are similar IPv4 abbreviations
+for all tables' built-in chains.
+
+	The functions are:
+
+subchain <name> <ipspec>: creates a user-defined subchain in the "filter" table
+with the given name that accepts TCP packets from the given IP specifier and
+ignores all other packets (leaving them for subsequent rules to process).  For
+example,
+
+subchain mychain 192.168.96.4/32
+
+is the same as
+
+$ITF -N mychain
+$ITF -A mychain -s 192.168.96.4/32 -j ACCEPT
+$ITF -A mychain -j RETURN
+
+This is a very common task.  Note that this does not arrange for anything to
+actually call the created chain, so a call to this function has no effect on
+the behavior of the firewall until something calls the chain the function
+creates.
+
+subchain4 <name> <ipspec>: similar to subchain, for the IPv4 "filter" table.
+
+00-global-clear
+---------------
+Clears out all firewall rules and user-defined chains, setting all default
+policies to ACCEPT -- in other words, sets things to a blank slate.
+
+10-global-chains
+----------------
+Creates some global subchains for use by later scripts (note that it does not
+actually *call* any of them).  Here are some of them:
+
+log_drop: Log the packet and DROP it (with a flood limit of 5 per minute)
+log_reject: Log the packet and REJECT it
+log_accept: Log the packet and ACCEPT it
+accept_unless_suspect: ACCEPT a packet unless it's on the suspect list, defined in same file
+handle_priv: Packets from private VLAN range accepted unless from suspect host
+web_ok: Accept TCP packets on ports 80 and 443 (standard http/https)
+cemon_ok: Accept TCP packets on port 14001
+bdii_ok: Accept TCP packets on ports 2170-2172
+bdii_intop_ok: Accept TCP packets on ports 2180-2182
+grnoc_ok: Accept GRNOC packets
+uiso_ok: Accept packets from UISO security scanning system
+tsm_ok: Opens up ports that allow TSM backups to work
+mdss_ok: Allows HSI callbacks from MDSS to work
+known_ok: Allows any packet from hosts known to be those used by GOC people
+
+Many of these are defined for both the IPv6 and IPv4 firewalls.  They can have
+the same names in both, because the two have completely separate sets of tables
+and thus separate namespaces.  For simplicity, though, we want subchains with
+the same names to perform similar functions in both firewalls.
+
+20-global-policies
+------------------
+Sets the default policies for the filter table's INPUT and FORWARD chains to
+DROP.  Also sets some extremely basic rules:
+
+ACCEPT incoming packets on established/related connections
+ACCEPT loopback packets
+
+30-global-rules
+---------------
+Actually calls some of the above chains, and has some other rules as well.
+Among the things it does:
+
+ACCEPTs incoming packets from non-suspect hosts on private VLAN
+DROPs incoming packets if they're on the global blacklist
+ACCEPTs ICMPv6 (or ICMP, for IPv4) packets from anywhere
+ACCEPTs packets from GRNOC's probes
+ACCEPTs packets from UISO's security scanners
+ACCEPTs SSH packets from known hosts (see known_ok above)
+ACCEPTs SSH packets from jump/jump2, even though they're suspect hosts
+ACCEPTs broadcast/multicast packets from elsewhere in the VLAN
+Calls confsync-dyndns to ACCEPT packets from dynamic DNS hosts
+
+90-global-end
+-------------
+
+	Does a sanity check -- if there are no rules in the filter/INPUT table
+by now (which could only happen if neither 20-global-policies nor
+30-global-rules ran), set all policies to ACCEPT, so an error won't result in a
+total bricking and a Data Center visit.  LOGs and REJECTs any packet that
+hasn't been ACCEPTed so far.
+
+As you can see, then, the general strategy is:
+
+*) Allow outgoing traffic unimpeded in any case
+*) Allow incoming traffic on private network if not from suspect hosts
+*) Packets from suspect hosts and public networks are REJECTed if not
+   specifically ACCEPTed
+
+Some examples
+=============
+
+	I learn best by example, so I figure examples might help others who are
+reading this and trying to figure out what I did.
+
+	First of all, as you can see from the description of 30-global-rules
+above, the default will get you LAN access (if the server is hooked up to the
+LAN), will let you do outgoing connections just fine, will let the NOC and
+Munin monitor the machine, and will let hosts on the "known_ok" list ssh in
+directly.  Because of lan_ok, people will be able to connect from jump.  So
+these are all the things you DON'T have to do in your local rules.
+
+	You might want to make sure to ". /etc/iptables.d/setup" in your local
+rules file.  Not only does it contain useful shortcuts, it also sets $PATH to
+something secure and ensures that you are always calling iptables by its full
+path for more security.
+
+	If the machine is to be backed up using TSM, you should add tsm_ok.
+
+$ITFAI -j tsm_ok
+
+	Now then, if the machine is to be a web server (most are), you should
+add web_ok:
+
+$ITFAI -j web_ok
+
+	If the machine is to host a CEMon/BDII aggregator, there are three
+chains to call:
+
+$ITFAI -j cemon_ok
+$ITFAI -j bdii_ok
+$ITFAI -j bdii_intop_ok
+
+	If you want these to work over IPv4, use the $ITFAI4 equivalents as
+well.
+
+Warnings
+========
+
+	Here are a few things to watch out for.
+
+	The "known_ok" chain only works if someone keeps the list of known
+hosts current.
+
+Iptables Execution Order
+========================
+
+	Just for your reference, here is the order in which packets traverse
+the iptables (not ip6tables) built-in chains; this was tested on RHEL 5.5 with
+a 2.6.18 kernel on 2010/12/03:
+
+For locally-originated packets:
+
+* (routing decision)
+* raw/OUTPUT
+* mangle/OUTPUT
+* nat/OUTPUT
+* (bridging decision)
+* filter/OUTPUT
+* mangle/POSTROUTING
+* nat/POSTROUTING
+
+For locally-destined packets:
+
+* raw/PREROUTING
+* mangle/PREROUTING
+* nat/PREROUTING
+* mangle/INPUT
+* filter/INPUT
+
+For forwarded packets:
+
+* raw/PREROUTING
+* mangle/PREROUTING
+* nat/PREROUTING
+* (routing and bridging decisions)
+* mangle/FORWARD
+* filter/FORWARD
+* mangle/POSTROUTING
+* nat/POSTROUTING
+
+	Or here's a diagram, which is adapted from chapter 3 of
+http://www.netfilter.org/documentation/HOWTO/netfilter-hacking-HOWTO.html:
+
+[IN]--->PREROUTING-+->[ROUTE]--->FORWARD-+->POSTROUTING--->[OUT]
+         raw       |              mangle ^    mangle
+         mangle    |              filter |    nat
+         nat       |                     |
+                   v                   OUTPUT raw
+                 INPUT mangle            ^    mangle
+                   |   filter            |    nat
+                   |                  [ROUTE] filter
+                   |                     ^
+                   v                     |
+                [LOCAL]               [LOCAL]
+
+	To understand this diagram, note that locally-originated packets begin
+at [LOCAL] in the lower right and proceed upward, toward [OUT].
+Locally-destined packets begin at [IN] in the upper left, then after PREROUTING
+they turn downward toward INPUT and [LOCAL].  Forwarded packets begin at [IN]
+and proceed straight to the right to [OUT].
+
+	A note about OUTPUT and routing: Although the document this diagram is
+from puts OUTPUT before [ROUTE] for locally-originated packets, it is a bit
+vague: "routing occurs after this hook [OUTPUT] is called: in fact, the routing
+code is called first (to figure out the source IP address and some IP
+options)".  I believe this means that some portions of the routing code are
+called before OUTPUT, and the rest after.  Suffice it to say that routing in
+the case of locally-originated packets is not handled in precisely the same way
+as it is in the case of forwarded packets.  Also, the document was written in
+2002, and changes may have been made to the kernel since then.  Regardless, my
+experiments show that for locally-originated packets, the output interface
+appears immediately and is available to the OUTPUT chains of all tables, and in
+the case of bridging, the physical interface appears to the filter/OUTPUT chain
+(the last one called) and not to the previous OUTPUT chains.
+
+	I have yet to do similar experiments with ip6tables, but note that
+there is no "nat" table in ip6tables, due to the IPv6 creators' obsession with
+eliminating NAT.

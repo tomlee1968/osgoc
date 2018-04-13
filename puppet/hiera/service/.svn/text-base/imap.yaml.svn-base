@@ -1,0 +1,7 @@
+---
+hiera::service:
+  dovecot:
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true

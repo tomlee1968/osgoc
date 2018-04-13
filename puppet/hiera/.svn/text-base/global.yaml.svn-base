@@ -1,0 +1,495 @@
+# Hiera data for all hosts.
+---
+classes:
+  - chrony
+  - hiera
+# All get puppet::client; only the Puppet server gets puppet::server
+  - puppet::client
+# All get puppet::cron, though puppet-test calls it with disable=true
+  - puppet::cron
+  - ssh_userkeys
+  - status_stamp
+  - unhierable
+  - temp::send_debug_mail
+
+# Augeas rules for the Hiera module to create.  For those who don't know about
+# Augeas already, it is capable of making single changes within standard config
+# files without changing anything else, but only if someone has written an
+# Augeas "lens" (definition file) for that configuration file.  Most standard
+# Linux configuration files have Augeas lenses, but of course some don't.  You
+# can use the 'augtool' command to test Augeas and its lenses.
+
+hiera::augeas:
+  etc_logrotate.d_syslog:
+    context: /files/etc/logrotate.d/syslog
+    changes:
+      - set rule/missingok 'missingok'
+
+# Certificates for the Hiera module to install (or remove).  Basically they
+# function like two combined File resources.  If you see an ENC[PKCS7,...]!
+# type object, this is a Hiera-eYAML encrypted value, and you will have to use
+# 'eyaml edit <file>' as root to edit it (only root has access to the key that
+# decrypts the data).  Outside of 'eyaml edit', you can still move the
+# encrypted block around from one place to another within the Hiera files; just
+# don't change its contents.
+
+hiera::certificate:
+  # OSG Operations Center user certificate; it is here because it's renewed annually
+  'help@opensciencegrid.org':
+    cert:
+      source: puppet:///modules/hiera/certificates/help_opensciencegrid.org_user_cert.pem
+      path: /etc/grid-security/user/cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+    key:
+      content: |
+        ENC[PKCS7,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]
+      path: /etc/grid-security/user/key.pem
+      owner: root
+      group: root
+      mode: 0640
+      replace: true
+
+# Cron resources for the Hiera module to create or remove.  Note that Puppet's
+# 'cron' type doesn't create cronjobs in /etc/cron.d; it makes them in root's
+# user crontabs (the ones you see when you do 'crontab -l' as root).
+
+#hiera::cron:
+# Temp rule 2015-02-13: Delete once it has run on all machines
+#  convert_to_gociptables_v6:
+#    command: /opt/sbin/convert_to_gociptables_v6.py
+#    ensure: absent
+
+# Exec resources for the Hiera module to create.  Note that these will
+# ordinarily run every time Puppet runs.  Use 'refreshonly: true' for commands
+# that you're only making available to Puppet for other resources to 'notify'
+# (i.e. they won't run every time Puppet runs but instead only when necessary).
+
+hiera::exec:
+  # This one exists for anything that changes mail aliases to notify:
+  newaliases:
+    command: newaliases
+    refreshonly: true
+  # Make sure there is a "Domain=goc" line in /etc/idmapd.conf:
+#  etc_idmapd_conf_domain_goc:
+#    command: /bin/sed -i.bak -r -e '/^[[:space:]]*Domain[[:space:]]*=/d' -e '/^[[:space:]]*#[[:space:]]*Domain[[:space:]]*=/aDomain = goc' /etc/idmapd.conf
+#    unless: /bin/grep -Eq '^[[:space:]]*Domain[[:space:]]*=[[:space:]]*goc[[:space:]]*$' /etc/idmapd.conf
+#    notify:
+#      - Exec[nfsidmap_c]
+  etc_idmapd_conf_no_domain_goc:
+    command: /bin/sed -i.bak -r -e '/^[[:space:]]*Domain[[:space:]]*=/d' /etc/idmapd.conf
+    onlyif: /bin/grep -Eq '^[[:space:]]*Domain[[:space:]]*=' /etc/idmapd.conf
+    notify:
+      - Exec[nfsidmap_c]
+  nfsidmap_c:
+    command: bash -c 'if [[ -e /usr/sbin/nfsidmap ]]; then /usr/sbin/nfsidmap -c; else /bin/true; fi'
+    refreshonly: true
+    notify:
+      - Exec[restart_rpcidmapd_if_exists]
+  restart_rpcidmapd_if_exists:
+    command: /bin/bash -c 'if [[ -e /etc/init.d/rpcidmapd ]]; then /sbin/service rpcidmapd restart; elif [[ -e /usr/lib/systemd/system/nfs-idmap.service ]]; then /bin/systemctl restart nfs-idmap.service; fi'
+    refreshonly: true
+  # Make sure dnsmasq doesn't contact ds2, which needs rebuilding
+  # Can remove once it has run everywhere -- TJL 2017-09-27
+  # Revise to add ds2 back in once it is rebuilt
+#  dnsmasq_remove_ds2_forward:
+#    command: /bin/sed -i.bak -r -e 's/^[[:space:]]*(server=\/goc\/192\.168\.97\.12)[[:space:]]*$/#\1/' /etc/dnsmasq.conf
+#    onlyif: /bin/grep -Eq '^[[:space:]]*server=.*192\.168\.97\.12[[:space:]]*$' /etc/dnsmasq.conf
+#    notify:
+#      - Service[dnsmasq]
+#  dnsmasq_remove_ds2_reverse_ipv4:
+#    command: /bin/sed -i.bak -r -e 's/^[[:space:]]*(server=\/168\.192\.in-addr\.arpa\/192\.168\.97\.12)[[:space:]]*$/#\1/' /etc/dnsmasq.conf
+#    onlyif: /bin/grep -Eq '^[[:space:]]*server=.*192\.168\.97\.12[[:space:]]*$' /etc/dnsmasq.conf
+#    notify:
+#      - Service[dnsmasq]
+#  dnsmasq_remove_ds2_reverse_ipv6:
+#    command: /bin/sed -i.bak -r -e 's/^[[:space:]]*(server=\/7\.3\.0\.0\.b\.e\.f\.6\.f\.2\.d\.f\.ip6\.arpa\/192\.168\.97\.12)[[:space:]]*$/#\1/' /etc/dnsmasq.conf
+#    onlyif: /bin/grep -Eq '^[[:space:]]*server=.*192\.168\.97\.12[[:space:]]*$' /etc/dnsmasq.conf
+#    notify:
+#      - Service[dnsmasq]
+# Temporary rule to email me when a machine has a divergent umask
+#  email_about_weird_umask:
+#    command: /opt/sbin/weird_umask.rb
+#    require:
+#      - File[/opt/sbin/weird_umask.rb]
+
+# Data for File resources to be generated for the Hiera module.  You can have a
+# static 'content' field, but if you're using a template, you should use
+# hiera::template_file, below.  Hiera creates resources with the
+# 'create_resources' function, which doesn't process any function calls found
+# in the hash, including the 'template' function.  The hiera::template_file
+# hash works around this.
+
+hiera::file:
+  /opt/sbin/weird_umask.rb:
+    ensure: absent
+#    source: puppet:///modules/hiera/anaconda/common/weird_umask.rb
+#    owner: root
+#    group: root
+#    mode: 0744
+#    replace: true
+  /etc/profile.d/custom.sh:
+    source: puppet:///modules/hiera/anaconda/common/custom.sh
+    owner: root
+    group: root
+    mode: 0755
+    replace: true
+  # These can't be moved to the stemcell-only files because certificates need them:
+  /etc/cron.d/munin_ip_plugins:
+    ensure: present
+    content: "4-59/5 * * * * root /opt/sbin/munin_ip_plugins.py
+
+"
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+    require:
+      - File[/opt/sbin/munin_ip_plugins.py]
+  /opt/sbin/munin_ip_plugins.py:
+    source: puppet:///modules/hiera/munin_ip_plugins.py
+    owner: root
+    group: root
+    mode: 0744
+    replace: true
+    require:
+      - Package[python-IPy]
+  /etc/grid-security:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/certificates:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/host:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/user:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  /etc/grid-security/README:
+    ensure: present
+    source: puppet:///modules/hiera/certificates/README
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+# Some machines need this to be different, especially the umask
+#  /etc/profile.d/custom.sh:
+#    source: puppet:///modules/hiera/anaconda/common/custom.sh
+#    ensure: present
+#    replace: true
+#    owner: root
+#    group: root
+#    mode: 0755
+  #
+  # Dynamic DNS config file and others require this directory:
+  /opt/etc:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  #
+  # Dynamic DNS config file can change:
+  /opt/etc/confsync-dyndns-hosts:
+    source: puppet:///modules/hiera/confsync-dyndns-hosts
+    owner: root
+    group: root
+    mode: 0644
+    replace: true
+    notify:
+      - Service[confsync-dyndns]
+  #
+  # Chrony Munin plugin
+  # Once it's in an RPM and installed at build time, remove this stuff
+  /opt/share/munin/plugins/chrony:
+    source: puppet:///modules/hiera/munin_chrony
+    owner: root
+    group: root
+    mode: 0755
+    replace: true
+  #
+  # Has to be here because of the /etc/sudoers.d/goc template
+  /etc/sudoers.d:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+  #
+  # Until I know what keeps changing /tmp's mode, this has to remain:
+  /tmp:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 01777
+
+hiera::mailalias:
+  sysadmin:
+    ensure: present
+    recipient: root@rootmail.goc
+    notify:
+      - Exec[newaliases]
+
+# Packages that need to be installed (or removed) -- note that 'latest' should
+# be reserved for local packages only; packages that come from the distro
+# should only be updated when the rest of the distro's packages are updated
+# (i.e. during monthly OS updates).
+
+hiera::package:
+  goc-crls:
+    ensure: latest
+    require:
+      - Package[goc-internal-repo]
+    tag: goc-crls
+  goc-internal-repo:
+    ensure: latest
+# Remove this when logwatch is removed everywhere -- 2018-04-13
+  logwatch:
+    ensure: absent
+  nfs-utils:
+    ensure: present
+  osg-ca-certs:
+    ensure: latest
+    require:
+      - Package[osg-release]
+  osg-release:
+    ensure: latest
+  osupdate:
+    ensure: latest
+    require:
+      - Package[goc-internal-repo]
+  python-IPy:
+    ensure: present
+
+# Services that need to be either started or stopped, enabled or disabled.
+
+hiera::service:
+# Don't want this started when installing
+#  confsync-dyndns:
+#    ensure: running
+#    enable: true
+#    hasrestart: true
+#    hasstatus: true
+  ntpd:
+    ensure: stopped
+    enable: false
+    hasstatus: true
+  puppet:
+    ensure: stopped
+    enable: false
+    hasrestart: true
+    hasstatus: true
+
+# The 'create_resources' function, which Puppet has to use to process most of
+# these Hiera records, doesn't call the 'template' function when it appears in
+# a File resource's 'content' field.  It doesn't call any functions, in fact.
+# So this template_file hash contains data about File resources that need
+# templates.  It has an extra 'template' field, and the Hiera module
+# specifically calls the 'template' function with the given argument, replacing
+# it in the final File resource with a 'content' field containing the results
+# of calling the 'template' function.  If there are variables you need to set
+# from here that appear in the templates, set them using a hiera::var setting.
+
+hiera::template_file:
+  /etc/sssd/sssd.conf:
+    template: hiera/sssd.conf.erb
+    owner: root
+    group: root
+    mode: 0600
+    replace: true
+    notify:
+      - Service[sssd]
+  /etc/sssd/sssd.conf.puppet:
+    ensure: absent
+  /etc/sssd/sssd.conf.bak:
+    ensure: absent
+  /etc/sudoers.d/goc:
+    template: hiera/sudoers_goc.erb
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0440
+    require:
+      - File[/etc/sudoers.d]
+      - File[/etc/sssd/sssd.conf]
+
+# Variables to be set in the Hiera module, mostly for use in
+# hiera::template_file resources:
+hiera::var:
+  ldap_secret: "ENC[PKCS7,MIIBiQYJKoZIhvcNAQcDoIIBejCCAXYCAQAxggEhMIIBHQIBADAFMAACAQEwDQYJKoZIhvcNAQEBBQAEggEAeds6Sv2q5Jd+R14AxVW2SgEC6X4gjpaHzJeYFeRtMO0k2udRpHcKu+JpGAvsvMp5bzK1GlaPv+SYGYt1IWNfJL/+325YfVB80zx2PH80BQhCEGxftCuz5zvHkHyIhPQK83EJUpCxZlhVoZL61dImlXy4T6JGWI/NrJH0SZtEJPq1+CxEnHbuhzbLXL+9kWh04unZLwbuXspSNUq47i4H92PF0gb/+9RaMBwjmQ2j9gbE+8yqoqAJuf5KTYKVb0WaC2q7xNJ0MO9vbnm1Un/Yg1egIBPXWcAVlufzB9HdMaL5QiqtMd3ecyvXkR1ejkM127y7oL2qT8gCS+qhMDMoIjBMBgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBCklw+8dlE4luXpUNKR4GiBgCDvx/I0FFrbJxNzRKBdoUapdYSQF9/gxlz+0IVP5fp8Wg==]"
+
+# Configuration for chrony, the ntpd daemon:
+chrony::rtconutc: true
+chrony::sync_local_clock: true
+chrony::servers:
+#  - ntp.grid.iu.edu iburst prefer
+# The hostname resolves to IPv6 but not all our servers are dual-stacked yet:
+  - 129.79.53.6 iburst prefer
+chrony::udlc: true
+
+# Employee SSH public keys -- these change enough that they're here and not in
+# the stemcell rules in anaconda/true.yaml:
+ssh_userkeys::keys:
+  # Note: remove once in effect 2017-05-15
+  adeximo@Alain-Deximos-MacBook-Pro.local:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEArFVhf2T0/oefPWMHGkb5aG3Pg3LLBaUCCH4H4B3XvAC1MoyKwEAn+qYg/Z4C2PNgJczQudaJGcXVfQKD9huY3lFsts+uVvEiTxoPcQavn9L+PZzDxQmHVgfmZwz3g9XYULMmdkqAkLWDcACV7h+Z08IxC34rzRpiTp7FA/Ny8G5cVB0A441lgIkxNmz59LYDhsXZNEd6HxtLlcpY9lNh0UJzNpVN8ewcu0YLSJsG9lkkPbbggBzAbuzu+LJFfbd8zOADz6gwONMYjPs5M0W40WMNd+AQXXToFDgqPES4OMCULIwwgInfJUVDDBfXYMh+014XuYThqkNpZQD//sdpOQ==
+    ensure: absent
+  # Note: remove once in effect 2017-05-15
+  cpipes_rsa-key-20110825:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABJQAAAQEAv4ItsypACI6o9L3EYX3p9fw9h3AfazK300NLDdO4bkkzEp/qdgl8Yf2KxhW8CQshpl3YLVtCmVREI+Yt6Dhx+qgtn3cx377XS2nuEv2XQ7DklWhXN8axMuqTybGmSdiuUsmxNBHhgZtz7GM+nTymVti+Oq9PIEni//AP5Pw6jdxAmPfYqN65cF+npfbfIopEeBpawrdg8hK1FlecuHst5AZcOZqwhCDCMW33TG24QHqRMlvLmJA2J9BgXFLa1vpEGhT+U/KUeprWw51MDlZ3rWJopnrTfSWdp+0KtPtbyabVIG0orsM210wy0B+CuiOTcbu6i67NATrv0NuY6OSdiQ==
+    ensure: absent
+  # Note: remove once in effect 2017-05-15
+  cpipes_rsa-key-20140522:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABJQAAAIEA8vChOV1mzcDiF9jygcNYF63zL8M15qj0Ru+onNgwS3hwpBkDIyNxFjZTxTDW0lSX4twaQ6j7HGzfRGFx2vzzCYy3ixKi+nmIyDBW+qIyZYoPXT6gi/wruSF5YXkiCWLa9OkGorg4aS6drdfsCSTfyRZPnoJz67bASVTfFSVu6x8=
+    ensure: absent
+  # Note: remove once in effect 2017-05-15
+  cpipes@Christophers-MacBook-Pro.local:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQCZMauVmMv2aXKQMVNZokzZQxo9/cEl80c9Z94ta9dCab/mYbg9g/pFk2NZoXm22723ihvbZFYMcfABxjxNgnGWnciTZDv/rkuSr3sTv632OjBYr4UVv6uR5GKuatu2WrMiL9BX5JosNygg4jQPCP6AgHU2O3nqASQa43Eg7omUcNf2o+BEYMbTxr+0OJZM6klT3U9sN1Ajpmng+s4P/ToTfH/CMgTPYgoFH+P09GTybE4bKZe60RAUi7c/JoNxmhbDu8kNeMLmi4JHtGn/k3FNEeq9S4PMRRTtkqFgwJa8UdiKAh4q2kb43SUKG5DrlIAVcz6KgG/GuAU2RVyCPYsJ
+    ensure: absent
+  echism_osg:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDXSYY98logEMPGWINzSqpC5ID7QRDFQ18QJHzxwISoKG3i2AXV/lFEG2RxWbBc/psW7Lo9jnl12wK6OK6qxWLJ9pHhvvceJ2gQtBXFwBOWvGWk8wtQ+6THc+RWkMjLy+RdL0/V6YxwxVDl6NUkU99dM8rCZNRcWDOhzW8r73mJw2rSG80ujL6meqITiyHPeMrjubkup8wrpBckMbluO1eh2KhdYQhjY7zSRL6JMYwm3UixHKkpCJzxJJMNyp3nQLCVjrO9JE+zuHs2VAuKrSYedxQhhRZyjYe4Pwqp7kuqm2oQF165MQanifjtuUAhQH1xheSw0b6YSYoU/IgWpF2B
+  echism@149-166-11-203.dhcp-in.iupui.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEA8eKjfP8Ft1v/wwLUzRag8Ao+SgczVoUicLFtJvgrHO0g4FxMh7xjfiC0sZC1o1XaviB2jaZwt+XkYc/YpkyTG/P50i0Lrfhddy2xDp+YJxJ6aMrpDKue+5x/lvpE3xVirL4Q8zEeAOWdfiCWYIF3GINOM91KqzEa+tvvD+WWBHYm6u6tkuJ+cFnitPq3pF6SOD6eiYZfyjO3Md86IIrfRghtosTspGOFZ+cUAsr20aaiZCtyWXdVq5mGTMan/pdfClb8QtjfPOplUH1c3RvJE7wWQ4xPxuYkSowyEFAHjf0rWjc0jpsZwJdf7BaR6N6iwoMz1HTIniA8PrDpKD9MkQ==
+  echism@impossible-X201E:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDGSLElS/hfFEvRe335PaOXkUX73QwarPg9Nx8tVBJgvAZCpCGh7dAv/GFsfaY9zonmyRJP9SFPThiomu2ij3wgM/2iUiy6uka32JY1H0xUoVhy0dfOPArUMPMc79cGewBpqRbNik/zg7wYsbBpew5v+wUrDEVPpFtXx/mxonlcRZTDrTINOIJlARcdrUImzMXtjQWaIgpDrDOxqD3RHdKoz8rRu1IGKEAU1pJNBS/CHaMNlsSGYEek93Xiua6PxpqpDHqqtmBL1lyziqQfU/TZE8qDteFVO/4R2KjgYKzyLOCT0ypAh0WeIOfxSdrZ/BNQqybusGWvc0oRnPHzax+V
+  hayashis@home:
+    type: ssh-rsa
+#    key: AAAAB3NzaC1yc2EAAAABJQAAAIEAqoko5XgaU4neQ4ku4CcED1SaY5HuRthIZoLKvRFU5nXNNHgGpPDfYuIFRWM69QFE8tRRnmdf3VCSPwOKaNgCk8FqDfswZoePSVsRn1BC+5nwmwk6jht7YvQOzjaBU+FuXFsOvtqHmy64c5Fub4hkLvSqvWuTKM1TshzH9LGjrJU=
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQChls21avMZyOuO+g/oAALpahtVhULAJHsCgY6EHBtWLdcN3hTrf6mDtYMooL8mChtCCNSYwI35VDNx7WFhbB7+y0CTcAiqvK3sYj9aAD0aamvx7ycTqte9Kq6+s/j8qzJPbPiaO1UOdy1Fd+rfPFZnzuKfPzeIXQsMF4rh3pjLO7i8KLaJyKjvpVelsJUHqRoVGlowPvjj/2wUxNg66+QPIdKWFu0BMbvB0Hea8WPGcEvPECprbPTJjEBSwK/SPtGMjvK3eYYdFt1DZpGBruFkOWrFDeym+DmSiwJmSY3gN0JpvniMELv/Dqitf4PaH+qTqANYS7nR4xF4zhD+rO1L
+  hayashis@yoga:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDAnCZzseMVb67pBaLwKGK4n7Kv0VyB5HEzCw3ZpLgO8ozOY88XgCVr8F2U7WFoeDXswaM8uX3CJ81XWDSsy7sC2+Yg+kduMVlplGkFt2zNKfqNmuNbpSu2O1k8hFRu/rWcYJ/sz6xr0kxas6it+9F1TmBiGnLisDSzxSe9b9sqoXLQoOzZyDnAXK63fZEs7GgiFWRixr3ffJShgpB/EF0jPXmhxokxW/BYFiqcugPP/gjn2dtUXFS4O0f8lz3D9uxjapzhyOPuaxUdHJNuf2zuLVYUTqnwEKEekqvUDT/znvWZzFOUKI9kult2F2crk4Zv/1feHEqvISXbibrNL7cl
+  kagross@Boss.local:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDp2Pi4zfZCdCSRMYy7UmyZmFQeltVATFVOaSi1e0l0xIFzpK8VuTEKQAv1qbeNXT3Cke4Rk/ahQQ09gsvfdMNNc9g1HQMfMKsJR0EkQ+GPWcncQ7JQWVpXkUmbWkFpGdX7fenPVy28Bs9+ZGO+TgubSTmLwEpvg0+PuowLuEbGHjTzYq+IoT6LX7qfzTsT0/HT/ry+pdhJAoL3JPovMYVq7jg/p6BeREjr9tfW9YZ+cmsPYa5HtD9E8DSY9vdP9fAzevvoYxrnxuIO0YlOJuc1pZBzQjQhd9p5t4SeOFrl/oxzhZaR7Zhta25QIQX0j2qr4yM8bduR6ED7yYJPbQ3n
+  kagross@iu.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQCzKrHsIGUTCddtvkkXZq/fh4hNJva8I02ao584T+l1/gUw9vejCh2TcKBVRj8GC6Bx/I/Oy8oqnwC3/I9TXhl36YVxL1i5V4VnWzc8Stq9Y73Qv3P5WfQ3s2B5gfVO0BKmfKhsIJQn7RdzXpamt3DuFCvGoAgMtIfwzybjXrt1sCuy3Y0y12aRl0lirKh4mOn2r9i+69BzeUcgHEe1agqqWeIrzQly3M1CBpVHtknaIWcj1bWf9BfORZltDjLLKyWr7TfOkDvPynFbRjGPRHLuL+GpTmUyH3fVatx+BT5z6AMab5ZPYCEKaiYTb7VW2xG8RTKPccq9VnZz6U5UXZ+9
+  marinakrenz@140-182-194-183.dhcp-bl.indiana.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQCno/+1vJtCrFCKdOl4l3jKVlHxHJvj7KHJhpVKnLng4FzbJrDG7QuszATG8defFKPSgr/0k2zYt4+XQTM/ufzXn6vZCYjczWeqmwXIofwfZxVrlphIH0CBPBgFl1HQ1aGoHRHcOuOoPe8cc72x1Z9P2FIybA4roCnL5fNt83e5IpH8eNL4XSCjN4AqTuvpP+ZwdRAGjaOo8wfTNKLyu0FTlnkaUjQWFBtUUk1AShD7wWkLj/eWIBMlI4wTVW/vnkQbbc9HMvtRKMTkDhSc4aHau5YMLnvWDOPnvZ3lvvSPa2t1Y7I94/rO43Mbc5Pokyw7tfqdTKk0HuZ3FToX/G3P
+  mvkrenz-rsa-key-20160602:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABJQAAAQEAigcobhtWfzs7lUlayMGeSIqHted63ArbuKlUrBJwZJ6A5FMjfDl/QGzfNnbZrLnviIHziwN2yQVi/ga+rjqumCajeaPEIcR3O12ym/QVe5HrJn8RrxB3yKghHfjwgBhysSxIgb6OiT8+XBCaO1rcmAowzrnhLxiS4+ZvhHun7HqA/6wgmcsdkBqYKk7LNFm14xmswyhKx3U35MvbVQgX1pFDqCPHCG1LDv6Ybn1jhEzfzclR8VWIU6Iz0Oj8qlR2hKqx7n6FSQK1sF9Nd3JoRuGUnV85vWbq20ure0eHXMgN/oGTuwPg/W/dO3KnD6L7dcESpazUs8s77e7YNOv63w==
+  rquick@iu.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEA1VgDNAwcqDolQ9L7IjEXptLtYbyvZKdO4nnPCCuvqeUcI/tf3Of1pCz88YQR2mrFmmjxBTabullBtu88VgjREXl1dwWVIXsjCLLhYNJ2K5JRYFCc+oiL6y74egYE3xoDEooWmVsE9JfVA2N2CQOtS1n6vd6TolYAciXXhh4Y7IqyHYsXR3VdNtZVe3ab4QTFwgT6Vo13kH7H4ebEV9nm9xLoGUf0Ehc8Ch5ZQBLJxqklczqpVUIRQ95kRTRLDGI+jh3knjDB+64Barhrovcort7Trtxxkvge+uxPLR5Dd9QVIE3NmakRHOadMfhV/UWIBvVf2F8Ef4pS8WzlAhqShw==
+  rquick_robquick@unknownb88d1226b442:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Diuk7RXyXdhU4cd2ykrpbTQsU8KK2vAmrOHvxa3zfuDqaVkfz/eybrWnZSNp5s6Dqhfz2vEnulwfgU9QVU2cOSutHMxHl3TyxrJbRIYdx4fggq+bJng3uJJHi29bHAOSeMgvM4U4PSqSouI87lgIdRucuize6hHQIaDacujKSrV51NFX83D6T2h9mxp8c75jFtrk6vU/2fJ97LHjTuhae6VI1/UbkVZyGR14celnIhFCmqocLXemfPCOt++VCtBoldezR01BK7+ZUZO1+J2LHJ9k/JLibsuDla5h/p9GUCRtVomX/EUJH3XnHiGkq/kS8ACLWekDgaJbQRwNNoOx
+  schmiecs@loanermac-20171002:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDdg1WjY6V6vXaGokZAKulfbS1jtGyCZLMLCZfJ8H3C6orXvy3MfaVutvEkYcM2vAdPex7+Np/e+32q221/sZw1eD7Mzn0EbaX6IJOt2hUXvKzyH5bDIk6J3wCW1PpBR/lO2kB0ioCeCk28cD0RPluf1qc/UhhlYV+YCRf2w5qSyr/uJ7VY99lNLP5Biu/Cho78SI8wflATDlfKtSjnuPDUIAZo22ZJfmxmubcBrvEE3u6IZ0uu9EDpoVqoGsLei470hW/5HMZ1ScGO8TdjlsLz6yRDePQJwmjrnYTAMv4J59bs7zb5QqrLzrZeiuwQ2mHJ050zwWLlWLFLwAYvyxmH
+  schmiecs@macbook-20171023:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDGA5CNYVo7OxOkDh5X0N7wfPbd32XX7EoMB0LvuYGMNjbxqxazhwq8yUo8vAuVlvb/O4waZubj9def/lP17KXTszwvHSCUxQgieUhoc4KcHL1lSIqx98XHcnB40fKmEJiksov4U5a88S20AW2oROxY14q1r4QZ66vZhjea+0d+m1Mq3VUwR7beX42lJ9nZN2h0lAFVG94e7tpBWPKIDV+eUnQaA53E4pNFM/cDB+b9bivsIy2aGYeUr0bmtrV+vhlwctTdE+qt1hvu21Ddgz0RKbZINGAuAx1YhwJHGv1ND3n1OJnh2iEKCHkrEQDFBXAYizGMs0ImL1X8HxDHUyMr
+  skronenf@iu.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAACAQC3RL79T9kss2UrLvHp1fwmqjAPS/x8aABYSz3Bk6t4GG2hkxxM8oZLwcQG3+WIM9BymyMGrKPBhe88dODjZJ4+Yqg3pBEk28dJ0uXPR8n2iHp3s9f+yvIBei1K/XFOC/HQSmDdhiMxOI1PKS6qioGPj9vvJy/HlLr6D95tKdRcczwdcLIkCXUUTOXIqfez/IfNuTuPZpMSOjp2LR96VYE5b/7yfdLS4LSFoeXOkjU+YV6nLjQYQl5myQjqKs82Z4o2AAuepGXNtFKZcbnOlWS91De7rxRMefBDGivamrhbVgutgblE05h+u6XbDWs9D3AhOYT/dinJ2mW0x0o2KxSuX+nmqVnykoJI9jKtZCRnxiUnoznLdWilTWaNohm8hH4iaseu4DD45tvMWacbxIBK+9AMcn/+LhhN3UiWkVfaV9qtlmS11WShwik07nBpOP1kH0LAKW+43KzkvPRHVogndTdzjNbh3kZMnWvSGrcviRktCjxM/cfO/kL2BQCM4Vi5AxqcjPThe0EZcwiVB+8xpYxAMW2vs1GqjlmLRcxzKmE9SPa+tj8JK8aITbRqC4qlxWb6pwm9yUEOSTNESJeouUVZpDXODpKV43/0TXkDgrHlLzUCNrO3+eJ5D+N8612R/9IYjKrp1MBcNbIZlKAA9bkOT7AYykJbKdR9RiEtlQ==
+  steige@iu.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDYTy3G0w8KgubpKllVCphC0iHVF+9BZ/bps0aKD52HNPE+/cuIMBxxSnsw246zYYEVKNB3TTMz7X4CgvMCfMS0VNnO4cOlCy8Yhkcsx3nOqdxbspkI3GHdMR7oWk1ui4U54pBPKzDzzY9UzY9qfULFR5ZlIxanG0DVI8O6lZLpjI57fr9izkMg7rf04TdNJizBcih1dp38Qp5lHpRCEz3+tSgzSNS2fWDTbKjGwaIJwN/hKPI17PSuD66cu9j6BHcn2xB3+WJ5qxZ0V9U0S8nSWwp0Zkdx4wgwm1C3cQLOlxGgYxCLh8fOvIKqTTL4cYnTBqwN1hTLZOz+1fZo0elr
+  steige@jump.grid.iu.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEA285CQiUT0UKWpBN1tZRJhhwEyXte02c+C696XkdxDR/HyyCZqDe2QJGL8/y5DJPt7ojKxxZAjNshn+kFMj23MjVRXj1Nhcmdgw7r1dcvH7xvWM+M7LArB0G40kCCgN7A+zxhPzaSdNDQU9IcE3/SoEmMCv9RTpk/arD1NXLALHzMZr4Itt0ZzJLs0Q2kYk/kgdsuNjrs+Ff6Y+Lp0HK8b68n1b7OlTM1lQUiGihWfZbhFYP83LBbJqO7BvQVOTmQKYM9gY59BhJ179Fv9vHbplm4asbQM1KKQYG/OlSR6aSYpr4y0K5OOWyqcFpZbDvzMdm6p9ONC24sWAw97muhWQ==
+  steige@Scott-Teiges-MacBook-Pro.local:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABIwAAAQEA2i/hZ4HVjHesloaINsQb2xZnLp07glEsUeyRxR5dgw/YnXkzYY4ZvDxSYrPrxHav9QcXgL3+JViKIKXQLMWPl2GYXurtHgDlimnhq47af9Hhx/URAtvzmvqESo2H1DC0HIWCW/oH7awbECkMCXXJ/xc70y7xN/S2tB6gWvEOoC+egg9OJ3yGRnUDCMfq1tPxyS7SX/743nj+l7vHKXrXCAACQYQiu3pE8OxPgJf/05oPAW8Yt4njV1PepH5HyDGtDwHIwRvyxwoSNfU5Sx1NQKyHbXyH9RUnMSM1EC0L9xp+/ofsRpOvOyPYeq4EV//R7AOscWZ/8eDow+2r4/7kIw==
+  thomlee@etchasketch:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQCm5mRLeGrL2Aj6JvEhmGlrA9aM6l67I4uRY3THIKe2p78bBOkxNx3fVVM7NeH3GQ8mwy+Vy2z1+p2Ooa6J2enz5w4xj27rlen4pEQu17p9FCQLorYGDrEhrdtf3J4KyQwAOKhxRvvngqP8G2yGIOFFVS7QkBw9hVKGMV3wmMXSRxjLotBMR9ZmF3xnJdMbQoJyWrtxCiFpBaoQ7YpMN5KSM7snVTnEpkZNdP122WRchFg0edOvzFgLvZs74wU3/aqED6Jg/rGNX716b0i0Dw79JfwOk9/UP44o2G79dP6M6jP1KtYzZKOKNedhCb9xrRFdsuLvnHvviwiXrIoh6ZfT
+  thomlee@radioflyer.uits.indiana.edu:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAIERDiaIpwLrvxMBlBmf5Cx1JWLPRL74K1oFkAg1IJU1vq93WVz+X5wGXMS3IO+5NJhVgad4Ng58R4jKykiYgMhcYxIL5vd3ZU2JhGyoaRahSpA52HfEQ9DNnK4HX2CT6Xc9WYoaOMA4S7wzSLvs6u5jBJrdGiINvTKQrcgEAEj5AAAAFQD6FHfxaiSU37Qb+eLoe+2ZlEwUBQAAAIBe2OfmCxfZ26ZzunqCHs36dcZ01SyRmtfL3sVpRrQK3zfXLrntaKy/GB8U2OWUTP9GnLhMogoEoEvELmH5+63FSDlOuCxUQg3/YJxws6MzmBz4maUmQtWdAyMRnLkfMXX15I72fc5ajwpa5VLQ0Q04orBKzp14D4ZLipzxBmCIdAAAAIAu/s8BqjD8E6ECZicA9vUteGS4Dg4DeMYXGHkgeghlTdFMMAkvWwYiuI7nlUrYy0Vh5BWpiWmfagt0Gi1ADM3wAB8JCLO8VDlRkBPrMWRo4YLsWZLfg0QvpMbzwL6eRrlkXacw5RgknZCpvAO5LQ0Xpk/RrIaHae0HWhLnQr7zzQ==
+  thomlee@toshiba_laptop:
+    type: ssh-dss
+    key: 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
+  thomlee@vxconnectbot.gs7:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAACAQCy591TnSaC+ksVYmabKikRBVHdKtF0gHoTrgzEGIKNom1RLho+R3gepD6VrIkzO10L0Mo2lD4iyLm8VXzdVENJDZsvt0kXkwvtdWs7yn6JtpZyt4oCdCjDXPfw/z0WhYyGIR7NroYhAm+Y4Kv4/UHUvxlJLSdRJxgL4suA4XCZqMkIJJlbvSurQriOGvWw/2jdc78cvAguhoMBbnxK/eEKern0jXjfJohApPp9s7Mg8VSNX2sWk1lBq2a5wV9RkOFVYWTc7uPOTA7tBu80YS0qTM22gEAYj9VgFJUHHOWD+d/q878Nx75KMSJDmHEuuE3IgmDeLhDi0NvU/wj3d0tRmz3ZFlf18eLs5ZiBJ2nm6t6OmDeDGfjiXlooSGg/zW0MTSuqTktkQyY32OBZmofjBABDop1nlXaP0BboHkuecYps93XdkE2D+inHZ81zegRCvjlWVh5b1rNjoyJjtl8QiuPY9VSOcGyirjjspxu6aDTaUPKj8sNhBARiudACUgzTmYcXWr5O6ifK13xYC2QK//B5TUnVEpUhoBCPoNrZRhM6ZE2ObercLGchExHP7dXbrhY61yH8O1eqCA/wPT2GOhiLjglDBGhjiPcxpv2mqtsaOxJ2Vw+wwkX+kdnOTgMSqYxDX/gMAsZlufqx8NmUrk29eNUVrBSicyemIlucHw==
+  vjneal_rsa-key-20170207:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAABJQAAAQEAyCMO6O2IVnipRxGzaWsH/1Yh08k3xxjM/PkYkKJycrqnOdx74unOXPgSGb/nwY1vzs6Y32N7yKs8sI0rofRZNchOsUioZkk4kVOJTkaIJ0xbcokFlflTR8oE0zfKshfU22TQ17i72Vjy/l4/W5+T/1fespN3JE1diBQ1Jwx5VpwRFhN9J2sBXZgX61RA1r1t+06IfG+X4izRYKs3RErLIGRXVXtj2cOagBLAPovG8W199Yw2aRKb0ioAeXU3bVbhJKx7k78e47Hh5ET6JCA1iAJmdVXhmJqVugDIe24/f4SUkjZwQOLTjdNJSurzRTgdY2nOHiTu3Rd1nRTJmWbomQ==
+
+ssh_userkeys::users:
+  # Note: remove once in effect 2017-05-15
+  adeximo:
+    home: /home/adeximo
+    keys:
+      - adeximo@Alain-Deximos-MacBook-Pro.local
+  # Note: remove once in effect 2017-05-15
+  cpipes:
+    home: /home/cpipes
+    keys:
+      - cpipes_rsa-key-20110825
+      - cpipes_rsa-key-20140522
+      - cpipes@Christophers-MacBook-Pro.local
+  echism:
+    home: /home/echism
+    keys:
+      - echism_osg
+      - echism@149-166-11-203.dhcp-in.iupui.edu
+      - echism@impossible-X201E
+  hayashis:
+    home: /home/hayashis
+    keys:
+      - hayashis@home
+      - hayashis@yoga
+  kagross:
+    home: /home/kagross
+    keys:
+      - kagross@Boss.local
+      - kagross@iu.edu
+  mvkrenz:
+    home: /home/mvkrenz
+    keys:
+      - marinakrenz@140-182-194-183.dhcp-bl.indiana.edu
+      - mvkrenz-rsa-key-20160602
+  rquick:
+    home: /home/rquick
+    keys:
+      - rquick_robquick@unknownb88d1226b442
+      - rquick@iu.edu
+  schmiecs:
+    home: /home/schmiecs
+    keys:
+      - schmiecs@loanermac-20171002
+      - schmiecs@macbook-20171023
+  skronenf:
+    home: /home/skronenf
+    keys:
+      - skronenf@iu.edu
+  steige:
+    home: /home/steige
+    keys:
+      - steige@iu.edu
+      - steige@jump.grid.iu.edu
+      - steige@Scott-Teiges-MacBook-Pro.local
+  thomlee:
+    home: /home/thomlee
+    keys:
+      - thomlee@etchasketch
+      - thomlee@radioflyer.uits.indiana.edu
+      - thomlee@toshiba_laptop
+      - thomlee@vxconnectbot.gs7
+  vjneal:
+    home: /home/vjneal
+    keys:
+      - vjneal_rsa-key-20170207

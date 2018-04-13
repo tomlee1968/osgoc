@@ -1,0 +1,57 @@
+# Resource for installing RHEL/CentOS 6 systems.
+---
+hiera::exec:
+  osg_release_repo:
+    unless: rpm -q osg-release
+    command: rpm -i http://repo2.goc/osg/3.3/osg-3.3-el6-release-latest.rpm
+    before:
+      - Package[osg-release]
+      - Package[osg-ca-certs]
+    require:
+      - File[/etc/resolv.conf]
+#      - Exec[ifup_goc_intf_pub]
+      - Exec[start_dnsmasq]
+
+hiera::file:
+  # Make sure this file exists so logrotate won't complain
+  /var/log/boot.log:
+    content:
+    owner: root
+    group: root
+    mode: 0644
+
+hiera::package:
+  # RHEL 6 ignores in package list
+  authconfig:
+    ensure: present
+  # RHEL 5 and RHEL/CentOS 6 only (for now): CILogon CA certs
+#  cilogon-ca-certs:
+  cilogon-openid-ca-cert:
+    ensure: present
+    require:
+      - Exec[osg_release_repo]
+  dnsmasq:
+    ensure: present
+  # RHEL 5 and RHEL/CentOS 6 only: local version of OpenSSH supports certificates
+  openssh:
+    ensure: latest
+    require:
+      - Package[goc-internal-repo]
+  postfix:
+    ensure: present
+  subversion:
+    ensure: present
+#   # RHEL 5 and 6 only: smart card reader package; unneeded
+#   ccid:
+#     ensure: absent
+#   # RHEL 5/6: CPU speed throttler to save battery on laptops; unneeded
+#   cpuspeed:
+#     ensure: absent
+
+hiera::service:
+  gociptables:
+    enable: true
+  sshd:
+    enable: true
+  sssd:
+    enable: true

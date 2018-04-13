@@ -1,0 +1,63 @@
+# Rules for physical systems
+---
+# Moved to Anaconda-only -- TJL 2016-02-01
+#hiera::augeas:
+#  magic_sysrq:
+#    context: /files/etc/sysctl.conf
+#    changes:
+#      - set kernel.sysrq 1
+
+hiera::exec:
+#   dell-system-update-repo:
+#     creates: /etc/yum.repos.d/dell-system-update.repo
+#     command: wget -q -O - http://linux.dell.com/repo/hardware/dsu/bootstrap.cgi | bash
+#   upgrade-omsa:
+#     command: /opt/sbin/upgrade-omsa
+#     require:
+#       - Exec[dell-system-update-repo]
+#       - File[/opt/sbin/upgrade-omsa]
+  restart-omsa:
+    command: /opt/sbin/restart-omsa
+    refreshonly: true
+    require:
+      - File[/opt/sbin/restart-omsa]
+#   configure-remoteaccess:
+#     command: /opt/sbin/configure-remoteaccess
+#     require:
+#       - File[/opt/sbin/configure-remoteaccess]
+#       - Exec[upgrade-omsa]
+
+hiera::file:
+  /opt/dell/srvadmin/etc/omarolemap:
+    source: puppet:///modules/hiera/dell/omarolemap
+    owner: root
+    group: root
+    mode: 0640
+    replace: true
+#     require:
+#       - Exec[upgrade-omsa]
+    notify:
+      - Exec[restart-omsa]
+  /opt/sbin/upgrade-omsa:
+    source: puppet:///modules/hiera/dell/upgrade-omsa
+    owner: root
+    group: root
+    mode: 0740
+    replace: true
+  /opt/sbin/restart-omsa:
+    source: puppet:///modules/hiera/dell/restart-omsa
+    owner: root
+    group: root
+    mode: 0740
+    replace: true
+
+hiera::template_file:
+  /opt/sbin/configure-remoteaccess:
+    template: hiera/configure-remoteaccess.erb
+    owner: root
+    group: root
+    mode: 0700
+    replace: true
+
+hiera::var:
+  remoteaccess_rootpw: "ENC[PKCS7,MIIBeQYJKoZIhvcNAQcDoIIBajCCAWYCAQAxggEhMIIBHQIBADAFMAACAQEwDQYJKoZIhvcNAQEBBQAEggEAcM+CqoI+9/ocfICJ0pawKpXfM5XzcfSHOa8lJuEQKT0FwJNzs19386n+HbKVV1c2auRyYv11mGvrXj0tgJzJhgGk9ft+WP3rUH3qnMZ5Ghs6Q/SShrZVaFHjltZZYz1yv15YheoR2AEgm7rzJRHaVSuTIXpnv/dBzK3Wo5dwXbYAbvPhYQBdh9aqD1fg9Wrku0zfAmEsKfZbkjbzqySLHYiLBsNBK5MT2B2EmmN+ZmLl0Ik/xthe9CTPAGoMAQdZOecm8wJbqtnBxSErHxE/hUmThA7gDDxBBVnIJ8oHWMeyymuvwIqb7EVJocISt8ZH8z3mJ/rfr3hJw9Knoi9fPjA8BgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBAkkdPiPfqmMsSWcBk4Fke4gBC9xWethElvZvkw3wtnx60z]"

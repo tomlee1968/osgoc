@@ -1,0 +1,34 @@
+---
+classes_exclude:
+  - ssh_userkeys
+hiera::file_exclude:
+  - /etc/dnsmasq.conf
+  - /etc/resolv.conf
+hiera::service:
+  dirsrv:
+    path: /etc/init.d:/etc/rc.d/init.d
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  dirsrv-admin:
+    path: /etc/init.d:/etc/rc.d/init.d
+    ensure: running
+    enable: true
+    hasrestart: true
+    hasstatus: true
+  sssd:
+    ensure: stopped
+    enable: false
+hiera::template_file:
+  /etc/sssd/sssd.conf:
+    ensure: absent
+  /etc/sudoers.d/goc:
+    template: hiera/sudoers_goc.erb
+    ensure: present
+    replace: true
+    owner: root
+    group: root
+    mode: 0440
+    require:
+      - File[/etc/sudoers.d]

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# printcapwd -- print the CA passphrase
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+
+CA_PWD_FILE=/root/.ssh/capwd
+
+CAPWD=$(< $CA_PWD_FILE)
+
+printf "%s" $CAPWD

@@ -1,0 +1,4 @@
+# Parameters for ip_ Munin plugin
+[ip_*]
+user root
+

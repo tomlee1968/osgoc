@@ -1,0 +1,15 @@
+---
+# Hiera file for RHEL production servers
+
+# Superseded:
+#classes:
+#  - config::login_warning
+#classes_exclude:
+#  - config::no_login_warning
+
+hiera::file:
+  /etc/profile.d/login_warnings.sh:
+    source: puppet:///modules/hiera/profile/login_warnings.sh
+    owner: root
+    group: root
+    mode: 0755

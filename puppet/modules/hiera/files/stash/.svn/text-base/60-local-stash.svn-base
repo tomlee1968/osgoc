@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# This file is synchronized by Puppet -- do not edit!
+# Look for it on the Puppet server in <envdir>/modules/hiera/files/stash
+
+# /etc/iptables.d/60-local-stash -- firewall rules for 'stash' xrootd service
+
+. /etc/iptables.d/setup
+
+# Open TCP ports 1094 and 1213 to the world
+$ITFAI -p tcp --dport 1094 -j ACCEPT
+$ITFAI4 -p tcp --dport 1094 -j ACCEPT
+$ITFAI -p tcp --dport 1213 -j ACCEPT
+$ITFAI4 -p tcp --dport 1213 -j ACCEPT
+
+# Open web access to the world
+$ITFAI -j web_ok
+$ITFAI4 -j web_ok

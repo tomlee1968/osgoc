@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# casignd	This shell script takes care of starting and stopping
+#		casignd (GOC SSH CA key signing daemon).
+#
+# chkconfig: - 04 96
+# description: casignd - GOC SSH CA key signing daemon
+# The GOC SSH CA key signing daemon signs keys given to it by
+# authorized users.
+
+# Source function library.
+. /etc/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+PATH=/sbin:/usr/sbin:/opt/sbin:/usr/local/sbin:/bin:/usr/bin:/opt/bin:/usr/local/bin
+
+RETVAL=0
+prog="casignd"
+
+start() {
+        # Start daemons.
+        echo -n $"Starting $prog: "
+        daemon casignd $OPTIONS
+	RETVAL=$?
+        echo
+        [ $RETVAL -eq 0 ] && touch /var/lock/subsys/casignd
+	return $RETVAL
+}
+
+stop() {
+        echo -n $"Shutting down $prog: "
+	killproc casignd
+	RETVAL=$?
+        echo
+        [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/casignd
+	return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+        ;;
+  stop)
+	stop
+        ;;
+  status)
+	status casignd
+	RETVAL=$?
+	;;
+  restart|reload)
+	stop
+	start
+	RETVAL=$?
+	;;
+  condrestart)
+	if [ -f /var/lock/subsys/casignd ]; then
+	    stop
+	    start
+	    RETVAL=$?
+	fi
+	;;
+  *)
+        echo $"Usage: $0 {start|stop|restart|condrestart|status}"
+        RETVAL=3
+esac
+
+exit $RETVAL

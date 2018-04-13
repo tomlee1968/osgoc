@@ -1,0 +1,60 @@
+#!/bin/sh
+#
+# dellom_alertmail	Set Dell OpenManage alert mail settings at boot
+#
+# chkconfig: 2345 98 02
+# description:	Sets Dell OpenManage alert mail settings at boot time
+
+# Source function library.
+. /etc/init.d/functions
+
+function start() {
+    echo -n $"Setting Dell OpenManage alert mail settings: "
+    if ! /opt/dell/srvadmin/bin/omreport system alertaction 2>&1 | grep -Fq /opt/sbin/dellom_alertmail; then
+	if [ -x /opt/sbin/dellom_alertmail ]; then
+	    /opt/sbin/dellom_alertmail -c
+	    success; echo
+	    return 0
+	else
+	    failure; echo
+	    return 1
+	fi
+    else
+	success; echo
+	return 0
+    fi
+}
+
+function status() {
+    if /opt/dell/srvadmin/bin/omreport system alertaction 2>&1 | grep -Fq /opt/sbin/dellom_alertmail; then
+	echo "OMSA alerts are going to the GOC alert system."
+	return 0
+    else
+	echo "OMSA alerts are not going to the GOC alert system."
+	return 1
+    fi
+}
+
+case "$1" in
+    start)
+	start
+	RETVAL=$?
+	;;
+    stop)
+	RETVAL=0
+	;;
+    restart)
+	start
+	RETVAL=$?
+	;;
+    status)
+	status
+	RETVAL=$?
+	;;
+    *)
+	echo $"Usage: $0 {start|stop|restart|status}"
+	exit 1
+	;;
+esac
+
+exit $RETVAL

@@ -1,0 +1,42 @@
+---
+chrony::servers:
+  - ntp.indiana.edu iburst prefer
+  - clock02.chil01.burst.net iburst
+  - ntp-2.cso.uiuc.edu iburst
+  - tock.jrc.us iburst
+  - ntp3.cs.wisc.edu iburst
+chrony::serve_ntp: true
+chrony::client_allow:
+  - 127.0.0.1/32
+  - '::1/128'
+  - 129.79.53.0/24
+  - 2001:18e8:2:6::/64
+  - 192.168.96.0/22
+  - fd2f:6feb:37::/48
+chrony::client_log: true
+chrony::udlc: true
+
+ntp::autoupdate: true
+ntp::iburst_enable: false
+ntp::interfaces:
+  - 127.0.0.1
+  - '::1'
+  - 129.79.53.6
+  - 192.168.96.1
+ntp::panic: false
+ntp::restrict:
+  - default kod nomodify notrap nopeer noquery
+  - -6 default kod nomodify notrap nopeer noquery
+  - 127.0.0.1
+  - -6 ::1
+  - 129.79.53.0 mask 255.255.255.0 nomodify notrap
+  - -6 2001:18e8:2:6::/64 nomodify notrap
+  - 192.168.96.0 mask 255.255.252.0 nomodify notrap
+  - -6 fd2f:6feb:37::/48 nomodify notrap
+ntp::servers:
+  - ntp.indiana.edu
+  - clock02.chil01.burst.net
+  - ntp-2.cso.uiuc.edu
+  - tock.jrc.us
+  - ntp3.cs.wisc.edu
+ntp::udlc: true

@@ -1,0 +1,16 @@
+# Written by Cobbler/Anaconda kickstart script
+
+# If you see "IPADDR=129.79.53.89" and/or "IPV6ADDR=2001:18e8:2:6::129/64"
+# below, this file has not been modified since the stemcell image was
+# installed.  This is bad.  Run an install script as soon as possible, or it
+# will not be possible for another VM to run using these IPs as long as this
+# one is using them.  Continuing to use the stemcell IP addresses may prevent
+# others from creating VMs from stemcell images.
+
+DEVICE="eth0"
+BOOTPROTO=static
+ONBOOT=yes
+IPADDR=129.79.53.89
+NETMASK=255.255.255.0
+IPV6INIT=yes
+IPV6ADDR=2001:18e8:2:6::129/64

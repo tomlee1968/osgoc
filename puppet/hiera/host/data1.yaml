@@ -1,0 +1,55 @@
+---
+hiera::certificate:
+  data1.grid.iu.edu:
+    cert:
+      path: /etc/grid-security/http/cert.pem
+      source: puppet:///modules/hiera/certificates/data1.grid.iu.edu_http_cert.pem
+      owner: root
+      group: root
+      mode: 0644
+      replace: true
+    key:
+      path: /etc/grid-security/http/key.pem
+      content: |
+        ENC[PKCS7,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]
+      owner: root
+      group: root
+      mode: 0600
+      replace: true
+    require:
+      - File[/etc/grid-security/http]
+
+hiera::file:
+  /etc/grid-security/http:
+    ensure: directory
+    owner: root
+    group: root
+    mode: 0755
+
+ssh_userkeys::keys:
+  blin@cs-wifiopen-92.cs.wisc.edu:
+    type: ssh-rsa
+    key: AAAAB3NzaC1yc2EAAAADAQABAAABAQDS4jk5XBtcsaqJruRK1OCuOVxmxRSsGsr7ePvQL95B3ZZ8i3XpeOs/R+wUyOrydEv8E3uluyclBM+QhWZH0KMuzWJ6KlKx1yaBTWT9iXO+/ovbarlDNLdtmfZs55bk9i0zt2rVt/gWTBrgWOYJjtYQZjtjhIWwaF5/bdcJjywTx6FC0/vguGHTBKEicERwVryyHo24KVapXGEiVO8q7bNZXdfbYW95dtHRYTRmzo2IjafmYY01zzFKMhSIN+Co/tWrAWXS1Tjt/WxxX8eE3/G9P9943oEfCpeesovdwMhPRk8FbZqgXVFMNhKLOgDzPn5/KbrrvCdlqfPqGz9HevJ/
+  edquist@cs.wisc.edu:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAMItd5GPvXnlxMNZfvfLKahuyRF2ZuNzDXADLtDZy6Za9HotM6g1eSwdxWz3arXP3RqwkMukon4PhHnuHO02uWcEH3yylAJLI8oIXle2mDHWF1kjm1nacXnh5rfmN7lHs6o4lGWL6DdKBUvZHtLWeWWopr6NA7tpQxgD1CveV7+PAAAAFQChooRzl8zY5XjiMVR9rdsuIvwgJQAAAIEAhuiyfLYSZwvAxU2dI6BcGXO+ZMxkxoBePAYUrNBb/bfVSbieUmpFIJST73HobDEKP4ghvmcvrtqFRJX7pCnzxYok5d3GMRGqpq5oDNe6yKJRx5FoyeFOlkECOL26gYUmYpdOII42Ba705+AO8GbiB0rtZJwJoINSwBMa+Hql2HIAAACAXpEZyaXMLzVGzxPBA1t8GmnKQtzGwSHmqmHrv+rEJUsEzLCF5UX7HUwJ1Ihd3QuVbND3aXy4E0Ug/4/dz9MHaHzI6J/4E2uS472GFad2AD7xqdpPJim4Pziqfcx0cd3Sjg0w/MjTbdoi8ipY4Pb+uDcA3fH5sjtBvakcp8tGR3E=
+  matyas@tonic.cs.wisc.edu:
+    type: ssh-dss
+    key: AAAAB3NzaC1kc3MAAACBAJGbLHbLZ820Cj/6oFFKLozs+55Tgw1FseghaKSM0ycV56U1HvhS3NKXNncX7AhanzMMRgz5xAdD8AbWDuG73tKh3OJvmgPiS2PYIr9IcSuomOo0FuNG0YL09QvwK1t+9oFSsN//fWaSug83WEidT/Q58a6Z/3X9hfUnNdYKdUUBAAAAFQCuG02xY1RfobZxON7BtemNFz21OQAAAIB6pBq+343zEbcNAsRgn5xs//VRU40Rm4yO+w1GvpLPXc+ym8NV9ncLPWd5mFTJAwpIj1Pc3q3Z4s/ItNsa1xHLNAeJQhWqqTICnUsy+DyOQLUh3yKmzxosmoaHAL50iUm1vASxUs/t0L2jdt755i6BD3M0NEWB3ZGGY/c4YvDWQQAAAIAJWl60lJyPKVj1Pc95XD79EcyEuMKTxiKv+AoLaSf83V6GfQRH+BGijz8A9lyfsaJtIRRQDJIrNKfo4EsYfMbgQg7SaxWcdG5MyNLmx8RAR/Jr9oap/p6J8s6RHProlGoAnEmBkw60Hn/FNXCpBf2Lm2//xstmOYk4UUIY38rncg==
+
+ssh_userkeys::users:
+  blin:
+    home: /home/blin
+    group: blin
+    keys:
+      - blin@cs-wifiopen-92.cs.wisc.edu
+  edquist:
+    home: /home/edquist
+    group: edquist
+    keys:
+      - edquist@cs.wisc.edu
+  matyas:
+    home: /home/matyas
+    group: matyas
+    keys:
+      - matyas@tonic.cs.wisc.edu
