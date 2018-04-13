@@ -1,0 +1,1844 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+
+# ldapdo -- do common LDAP tasks with minimum fuss
+# Tom Lee <thomlee@iu.edu>
+# Begun 2014-06-04
+# Last modified 2015-06-17
+
+# I can't believe I haven't written this before now.
+
+use Data::Dumper;
+use Getopt::Std;
+use List::Compare;
+use Net::LDAP;
+use Net::LDAP::Util qw( escape_dn_value
+			escape_filter_value );
+
+###############################################################################
+# Settings
+###############################################################################
+
+my @SERVERS = qw(ds-bl-01.grid.iu.edu ds-bl-02.grid.iu.edu);
+#my @SERVERS = qw(ds-bl-02.goc);
+my $BINDDN = 'cn=manager,dc=goc';
+my $BINDPW = 'Xin9ga}oraeng9yu';
+my $BASEDN = 'dc=goc';
+my %BASEDN =
+  (
+   user  => "ou=People,$BASEDN",
+   group => "ou=Groups,$BASEDN",
+   host  => "ou=Hosts,$BASEDN",
+  );
+my %CLASS =
+  (
+   user  => 'posixAccount',
+   group => 'posixGroup',
+   host  => 'ipHost',
+  );
+my %RDNA =
+  (
+   user  => 'uid',
+   group => 'cn',
+   host  => 'cn',
+  );
+# Base GID for machine access groups
+my $GIDBASE = 901;
+# Base UID/GID for user accounts and their default groups
+my $UIDGIDBASE = 1000;
+my $version = '0.1';
+my %cmdparse =
+  (
+   _opts => 'dhtv',
+   check =>
+   {
+    _opts => '',
+    _handler => \&do_check,
+   },
+   group =>
+   {
+    _opts => 'h',
+    _handler => \&do_group,
+    add =>
+    {
+     _arg => 1,
+     _opts => 'hi:',
+     _handler => \&do_group_add,
+    },
+    del =>
+    {
+     _arg => 1,
+     _opts => '',
+     _handler => \&do_group_del,
+    },
+    dump =>
+    {
+     _opts => '',
+     _handler => \&do_group_dump,
+    },
+    edit =>
+    {
+     _arg => 1,
+     _opts => 'a:r:',
+     _handler => \&do_group_edit,
+    },
+    list =>
+    {
+     _opts => '',
+     _handler => \&do_group_list,
+    },
+    next =>
+    {
+     _opts => 's:',
+     _handler => \&do_group_next,
+    },
+    rename =>
+    {
+     _arg => 1,
+     _opts => 'n:',
+     _handler => \&do_group_rename,
+    },
+    show =>
+    {
+     _arg => 1,
+     _opts => '',
+     _handler => \&do_group_show,
+    },
+   },
+   host =>
+   {
+    _opts => 'h',
+    _handler => \&do_host,
+    dump =>
+    {
+     _opts => '',
+     _handler => \&do_host_dump,
+    },
+    list =>
+    {
+     _opts => '',
+     _handler => \&do_host_list,
+    },
+    show =>
+    {
+     _arg => 1,
+     _opts => '',
+     _handler => \&do_host_show,
+    },
+   },
+   search =>
+   {
+    _arg => 1,
+    _opts => '',
+    _handler => \&do_search,
+   },
+   user =>
+   {
+    _opts => 'h',
+    _handler => \&do_user,
+    active =>
+    {
+     _arg => 1,
+     _opts => 'ny',
+     _handler => \&do_user_active,
+    },
+    add =>
+    {
+     _arg => 1,
+     _opts => 'e:i:n:p:',
+     _handler => \&do_user_add,
+    },
+    del =>
+    {
+     _arg => 1,
+     _opts => '',
+     _handler => \&do_user_del,
+    },
+    dump =>
+    {
+     _opts => '',
+     _handler => \&do_user_dump,
+    },
+    edit =>
+    {
+     _arg => 1,
+     _opts => 'p:',
+     _handler => \&do_user_edit,
+    },
+    list =>
+    {
+     _opts => '',
+     _handler => \&do_user_list,
+    },
+    next =>
+    {
+     _opts => 's:',
+     _handler => \&do_user_next,
+    },
+    rename =>
+    {
+     _arg => 1,
+     _opts => 'n:',
+     _handler => \&do_user_rename,
+    },
+    show =>
+    {
+     _arg => 1,
+     _opts => '',
+     _handler => \&do_user_show,
+    },
+   }
+  );
+
+###############################################################################
+# Initializations
+###############################################################################
+
+my %glopt = ();
+
+###############################################################################
+# Subroutines
+###############################################################################
+
+sub print_version {
+  # Print version number.
+  printf "%s version %s\n", $0, $version;
+}
+
+sub print_help {
+  # Print help text.
+  print <<EOF
+Usage:
+$0 [<global options>] <cmd> [<cmd opts>] [<subcmd> [<subcmd opts>]]
+Global options:
+  -d: Debug mode (extra verbose output)
+  -h: Print this help text and exit
+  -t: Test mode (print what would be done, but don't do it)
+  -v: Print version number and exit
+Commands:
+  check: Check directory and report on problems (makes no changes)
+  group [<cmd opts>] <subcmd> [<subcmd opts>]: Group operations
+  host [<cmd opts>] <subcmd> [<subcmd opts>]: Host operations
+  search <query>: Plain LDAP search; dump results to screen
+  user [<cmd opts>] <subcmd> [<subcmd opts>]: User operations
+Note: Commands all have a -h option.
+EOF
+    ;
+}
+
+sub print_group_help {
+  # Print help for the 'group' command.
+  print <<EOF
+Usage: 
+$0 [<glopts>] group [<cmd opts>] <subcmd> [<subcmd opts>]
+Command options:
+  -h: Print this help text and exit.
+Subcommands:
+  add <groupname> [-i <gid>]: Add a group
+  del <groupname>: Delete a group
+  dump: Dump LDAP data about groups
+  edit <groupname> -a <user> -r <user>: Add or remove user(s) to/from group
+  list: List all groups
+  next [-s <startid>]: Report on the next available GID
+  rename <groupname> -n <newname>: Rename a group
+  show <groupname>: Show info about specified group
+EOF
+    ;
+}
+
+sub print_host_help {
+  # Print help for the 'host' command.
+  print <<EOF
+Usage: 
+$0 [<glopts>] host [<cmd opts>] <subcmd> [<subcmd opts>]
+Command options:
+  -h: Print this help text and exit.
+Subcommands:
+  dump: Dump LDAP data about hosts
+  list: List all hosts
+  show <hostname>: Show info about specified host
+EOF
+    ;
+}
+
+sub print_user_help {
+  # Print help for the 'user' command.
+  print <<EOF
+Usage: 
+$0 [<glopts>] user [<cmd opts>] <subcmd> [<subcmd opts>]
+Command options:
+  -h: Print this help text and exit.
+Subcommands:
+  active <username> [-n|-y]: Deactivate or activate user account
+  add <username> -e <email> -n <name> [-p <phone>] [-i <uid/gid>]: Add a user
+  del <username>: Delete a user
+  dump: Dump LDAP data about users
+  edit <username> -p <passwd>: Edit user entry
+  list: List all users
+  next [-s <startid>]: Report on the next available UID/GID
+  rename <username> -n <newname>: Rename a user
+  show <username>: Show info about specified user
+EOF
+    ;
+}
+
+sub handle_glopts {
+  # Global command-line options
+  %glopt = ();
+  getopts($cmdparse{_opts}, \%glopt);
+
+  # Do things based on whether options in %glopt are set.
+  if($glopt{h}) {
+    &print_help;
+    exit 0;
+  }
+  if($glopt{v}) {
+    &print_version;
+    exit 0;
+  }
+}
+
+sub debug_print {
+  # If $glopt{d} is set, print the given text with a debug prefix and a
+  # newline.  If it isn't set, print nothing.
+  my($msg) = @_;
+  printf "(DEBUG) %s\n", $msg if $glopt{d};
+}
+
+sub debug_printf($@) {
+  # If $glopt{d} is set, print the given text with a debug prefix and a
+  # newline.  If it isn't set, print nothing.
+  my($fmt, @data) = @_;
+  printf "(DEBUG) $fmt\n", @data if $glopt{d};
+}
+
+sub test_printf($@) {
+  # Print the given text with a test prefix and a newline.
+  my($fmt, @data) = @_;
+  printf "(TEST) $fmt\n", @data;
+}
+
+sub dn {
+  # Return a DN for the given RDN value (username, group name, hostname) for
+  # the given type of record (which can be 'user', 'group', or 'host').
+  my($rdnv, $which) = @_;
+  unless($which and
+	 ($which eq 'user' or $which eq 'group' or $which eq 'host')) {
+    warn "&dn called with inappropriate type\n";
+    exit 1;
+  }
+  return sprintf '%s=%s,%s',
+    $RDNA{$which}, escape_dn_value($rdnv), $BASEDN{$which};
+}
+
+sub specfilter {
+  # Returns a filter to look for the specific RDN value (username, group name,
+  # or hostname) for the given type of record (which can be 'user', 'group', or
+  # 'host').
+  my($rdnv, $which) = @_;
+  return sprintf '(&(objectClass=%s)(%s=%s))',
+    $CLASS{$which}, $RDNA{$which}, escape_filter_value($rdnv);
+}
+
+sub genfilter {
+  # Returns a filter to look for any entries for the given type of record
+  # (which can be 'user', 'group', or 'host').
+  my($which) = @_;
+  return sprintf 'objectClass=%s', $CLASS{$which};
+}
+
+sub ldaperr {
+  # All of the various Net::LDAP->* query commands return a Net::LDAP::Message
+  # object (or a subclass of it), which has an "is_error" method that returns
+  # true if there was an error and an "error" method that contains the error
+  # message.  All this does is take that object, and if there was an error,
+  # print that error message to stderr, close the LDAP connection, and return
+  # undef.  If there was no error, return the object.  An optional second
+  # parameter allows a more descriptive error message; it should be a gerund
+  # phrase describing what you were trying to do ("adding a user", "binding to
+  # the server").
+  my($ldap, $mesg, $smurfing) = @_;
+  if($mesg->is_error) {
+    my $desc = $smurfing?" while $smurfing":'';
+    warn "An LDAP error occurred$desc: ".$mesg->error."\n";
+    &ldapclose($ldap);
+    return undef;
+  }
+  return $mesg;
+}
+
+sub ldapbind {
+  # Make a connection to one of @SERVERS, bind using $BINDDN/$BINDPW, and
+  # return the Net::LDAP object.
+  my $ldap = Net::LDAP->new(\@SERVERS);
+  unless($ldap) {
+    warn("Unable to contact LDAP server: $@\n");
+    return undef;
+  }
+  &debug_printf('Binding to LDAP server with DN "%s" and password "***"', $BINDDN);
+  my $bind = &ldaperr($ldap, $ldap->bind
+    (
+     $BINDDN,
+     password => $BINDPW,
+    ), 'binding to the server');
+  return undef unless defined $bind;
+  return $ldap;
+}
+
+sub ldapdelete {
+  # Deletes an LDAP entry, given by $dn.  Returns a Net::LDAP::Message object
+  # on success.  Prints an error message and returns undef if there was an
+  # error.
+  my($ldap, $dn) = @_;
+  return undef unless $ldap and $dn;
+  &debug_printf('Deleting entry "%s"', $dn);
+  my $mesg = &ldaperr($ldap, $ldap->delete($dn), "deleting entry '$dn'");
+  return undef unless defined $mesg;
+  return 1;
+}
+
+sub ldapsearch {
+  # Does an LDAP query, given a Net::LDAP object representing an open and bound
+  # connection (of the sort returned by &ldapbind above) and a set of query
+  # options.  Returns a Net::LDAP::Search object if the search worked.  If the
+  # search failed for some reason, prints an error message, closes the LDAP
+  # connection, and returns undef.
+  my($ldap, %queryopts) = @_;
+  &debug_printf('Searching for:');
+  foreach my $key (sort keys %queryopts) {
+    &debug_printf('  %s: %s', $key, $queryopts{$key});
+  }
+  my $search = &ldaperr($ldap, $ldap->search(%queryopts), 'searching');
+  return undef unless defined $search;
+  return $search;
+}
+
+sub ldapclose {
+  # Close the LDAP connection.
+  my($ldap) = @_;
+  $ldap->unbind;
+}
+
+sub entryexists {
+  # Determines whether a given RDN value (username, group name, or hostname)
+  # exists in the directory.  Requires as arguments a Net::LDAP object
+  # representing a bound LDAP connection, the RDN value, and a string telling
+  # us which type of record we're looking for (using internal codes 'user',
+  # 'group', or 'host').
+  my($ldap, $rdnv, $which) = @_;
+  return undef unless $ldap and $rdnv;
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{$which},
+     filter => &specfilter($rdnv, $which),
+     attrs => [ $RDNA{$which} ],
+    ) or return undef;
+  if($glopt{d}) {
+    &debug_print('Results:');
+    foreach my $entry ($search->entries) {
+      $entry->dump;
+    }
+  }
+  if($search->count > 0) {
+    return 1;
+  } else {
+    return '';
+  }
+}
+
+sub do_group_add {
+  # Handle 'group add'
+  my($group, $cmdopt) = @_;
+
+  # If $cmdopt->{i} is specified, run a sanity check or three on its value.
+  if(exists $cmdopt->{i}) {
+    unless(defined $cmdopt->{i}) {
+      warn "You somehow specified an undefined value for -i.  Stop that.\n";
+      return undef;
+    }
+    if($cmdopt->{i} =~ /^\s*$/) {
+      warn "Blank strings are not allowed as GID numbers.\n";
+      return undef;
+    }
+    if($cmdopt->{i} =~ /\D/) {
+      warn("The GID must be a nonnegative integer; no nonnumeric characters allowed.\n");
+      return undef;
+    }
+    if($cmdopt->{i} < 500) {
+      warn("GID values under 500 are reserved for system processes.\n");
+      return undef;
+    }
+  }
+
+  # Make sure the group name is good
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $done = '';			# Group name selection doneness flag
+  until($done) {
+    # If no groupname was given on the command line (or if it was invalid for
+    # some reason and we cleared it; see below), prompt for one.
+    debug_printf "\$group = '%s'", $group;
+    unless($group) {
+      print 'Group name: ';
+      $group = <>;
+      chomp($group);
+      # Reject null group names.
+      unless($group) {
+	print "We're going to need a group name here, or we can't continue.\n";
+	next;
+      }
+    }
+    # See if that group name exists in the directory.
+    &debug_print("Seeing whether '$group' is already a group ...");
+    my $group_exists = &entryexists($ldap, $group, 'group');
+    return undef unless defined $group_exists;
+    if($group_exists) {
+      # Group name already taken -- restart the loop, setting $group to a blank
+      # string so it'll prompt (or prompt again).
+      print "That group name already exists. You must choose a group name that doesn't conflict with an existing one.\n";
+      $group = '';
+      next;
+    }
+    # If we've made it here, it's good.
+    $done = 1;
+  }
+
+  # If $cmdopt->{i} is defined (a specified GID from the command line), make
+  # sure that no group with that GID exists already.  Otherwise, find an unused
+  # one starting at $GIDBASE.
+  my $id;
+  if(exists $cmdopt->{i}) {
+    # Search for a group with that numeric GID.
+    my $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{group},
+       filter => sprintf('(&(objectClass=%s)(gidNumber=%d))',
+			 $CLASS{group}, $cmdopt->{i}),
+       attrs => [ 'cn', 'gidNumber' ],
+      ) or return undef;
+    if($search->entries > 0) {
+      my($entry) = $search->entries;
+      my($group) = $entry->get_value('cn');
+      warn "Cannot use GID '$cmdopt->{i}'; it is already taken by group '$group'.\n";
+      &ldapclose($ldap);
+      return undef;
+    }
+    $id = $cmdopt->{i};
+  } else {
+    # Find an unused GID.  Start by getting all the GID numbers that exist.
+    # It's either this or perform lots of separate searches, and this technique
+    # is just fine as long as there aren't thousands of groups, and that's not
+    # likely to ever happen.
+    print "Searching for suitable GID ...\n";
+    my $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{group},
+       filter => &genfilter('group'),
+       attrs => [ 'gidNumber' ],
+      ) or return undef;
+    my %gidexists = ();
+    foreach my $entry ($search->entries) {
+      my $thisid = $entry->get_value('gidNumber')*1;
+      $gidexists{$thisid}++;
+    }
+    for($id = $GIDBASE; 1; $id++) {
+      # We need the same uidNumber and gidNumber to be free.
+      last unless $gidexists{$id};
+    }
+  }
+
+  # Figure out some other fields.
+  my $groupdn = &dn($group, 'group');
+  my %groupentry =
+    (
+     objectClass => [ qw ( posixGroup
+			   top
+			   groupOfUniqueNames
+			   groupOfNames ) ],
+     cn => $group,
+     gidNumber => $id,
+     description => "",
+    );
+  print "Adding group '$group'\n";
+  print "GID: $id\n";
+  my $ok;
+  until($ok) {
+    print "Is this OK (y/n)? ";
+    $ok = <>;
+    chomp $ok;
+    unless($ok eq 'y' or $ok eq 'n') {
+      print "We need a y or n here.\n";
+      $ok = '';
+    }
+  }
+  if($ok eq 'y') {
+    if($glopt{t}) {
+      test_printf "New group record:";
+      test_printf "  dn: %s", $groupdn;
+      foreach my $key (sort keys %groupentry) {
+	my $value;
+	if(ref($groupentry{$key})) {
+	  $value = join ', ', @{$groupentry{$key}};
+	} else {
+	  $value = $groupentry{$key};
+	}
+	test_printf "  %s: %s", $key, $value;
+      }
+    } else {
+      # Add the group.
+      my $add_result = &ldaperr
+	(
+	 $ldap, $ldap->add
+	 (
+	  $groupdn,
+	  attrs => [ map { $_ => $groupentry{$_} } keys %groupentry ],
+	 ), 'adding a group entry');
+      return undef unless defined $add_result;
+      print "Group added.\n";
+    }
+  } else {
+    print "Canceled. No change made.\n";
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_group_rename {
+  # Handle the 'group rename' command, which renames a group.
+  my($group, $cmdopt) = @_;
+
+  # Make sure the user specified a group.
+  unless($group) {
+    warn "You must specify a group to rename.\n";
+    return undef;
+  }
+  # Make sure the group exists in the first place.
+  my $ldap = &ldapbind or return undef;
+  my $exists = &entryexists($ldap, $group, 'group');
+  return undef unless defined $exists;
+  unless($exists) {
+    warn "Group '$group' doesn't exist; can't rename.\n";
+    return undef;
+  }
+  
+  # Make sure the new group name is good
+  my $newgroup = $cmdopt->{n};
+  my $done = '';			# Group name selection doneness flag
+  until($done) {
+    # If no groupname was given on the command line (or if it was invalid for
+    # some reason and we cleared it; see below), prompt for one.
+    debug_printf "\$newgroup = '%s'", $newgroup;
+    unless($newgroup) {
+      print 'Group name: ';
+      $newgroup = <>;
+      chomp($newgroup);
+      # Reject null group names.
+      unless($newgroup) {
+	print "We're going to need a group name here, or we can't continue.\n";
+	next;
+      }
+    }
+    # See if that group name exists in the directory.
+    &debug_print("Seeing whether '$newgroup' is already a group ...");
+    my $group_exists = &entryexists($ldap, $newgroup, 'group');
+    return undef unless defined $group_exists;
+    if($group_exists) {
+      # Group name already taken -- restart the loop, setting $newgroup to a
+      # blank string so it'll prompt (or prompt again).
+      print "That group name already exists. You must choose a group name that doesn't conflict with an existing one.\n";
+      $newgroup = '';
+      next;
+    }
+    # If we've made it here, it's good.
+    $done = 1;
+  }
+
+  # If we're here, we've got a good $group and a good $newgroup, so proceed.
+  my %modhash =
+    (
+     newrdn => (sprintf '%s=%s', $RDNA{group}, $newgroup),
+     deleteoldrdn => 1,
+    );
+  my $mod_result = &ldaperr($ldap, $ldap->moddn
+			    (
+			     &dn($group, 'group'),
+			     %modhash,
+			    ), "renaming group '$group' to '$newgroup'");
+  return undef unless defined $mod_result;
+  printf "Group '%s' renamed to '%s'.\n", $group, $newgroup;
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_user_rename {
+  # Handle the 'user rename' command, which renames a user.
+  my($user, $cmdopt) = @_;
+
+  # Make sure the user specified a username.
+  unless($user) {
+    warn "You must specify a user to rename.\n";
+    return undef;
+  }
+  # Make sure the username exists in the first place.
+  my $ldap = &ldapbind or return undef;
+  my $exists = &entryexists($ldap, $user, 'user');
+  return undef unless defined $exists;
+  unless($exists) {
+    warn "User '$user' doesn't exist; can't rename.\n";
+    return undef;
+  }
+  
+  # Make sure the new user name is good
+  my $newuser = $cmdopt->{n};
+  my $done = '';			# User name selection doneness flag
+  until($done) {
+    # If no username was given on the command line (or if it was invalid for
+    # some reason and we cleared it; see below), prompt for one.
+    debug_printf "\$newuser = '%s'", $newuser;
+    unless($newuser) {
+      print 'User name: ';
+      $newuser = <>;
+      chomp($newuser);
+      # Reject null usernames.
+      unless($newuser) {
+	print "We're going to need a username here, or we can't continue.\n";
+	next;
+      }
+    }
+    # See if that user name exists in the directory.
+    &debug_print("Seeing whether '$newuser' is already a username ...");
+    my $user_exists = &entryexists($ldap, $newuser, 'user');
+    return undef unless defined $user_exists;
+    if($user_exists) {
+      # Username already taken -- restart the loop, setting $newuser to a
+      # blank string so it'll prompt (or prompt again).
+      print "That username already exists. You must choose a username that doesn't conflict with an existing one.\n";
+      $newuser = '';
+      next;
+    }
+    # If we've made it here, it's good.
+    $done = 1;
+  }
+
+  # If we're here, we've got a good $user and a good $newuser, so proceed.
+  my %modhash =
+    (
+     newrdn => (sprintf '%s=%s', $RDNA{user}, $newuser),
+     deleteoldrdn => 1,
+    );
+  my $mod_result = &ldaperr($ldap, $ldap->moddn
+			    (
+			     &dn($user, 'user'),
+			     %modhash,
+			    ), "renaming user '$user' to '$newuser'");
+  return undef unless defined $mod_result;
+  printf "User '%s' renamed to '%s'.\n", $user, $newuser;
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_user_active {
+  # Handle the 'user active' command, which activates or inactivates a user
+  # account (depending on whether you specified the -n or -y option, one of
+  # which must be used or the command makes no sense).
+  my($user, $cmdopt) = @_;
+
+  # Either -n or -y must be there.
+  unless($cmdopt->{n} or $cmdopt->{y}) {
+    warn "You must specify either -y or -n.\n";
+    return undef;
+  }
+  if($cmdopt->{n} and $cmdopt->{y}) {
+    warn "You cannot specify both -y and -n.\n";
+    return undef;
+  }
+  # OK, at this point we are guaranteed that either $cmdopt->{n} or
+  # $cmdopt->{y} is true, but not both.  Now see whether a user has been
+  # specified -- if not, prompt for one.  At the end of this process we will
+  # have a user account that exists, or we will exit.
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $done = '';			# Doneness flag
+  until($done) {
+    # If no username was given on the command line (or if it was invalid for
+    # some reason and we cleared it; see below), prompt for one.
+    unless($user) {
+      print 'Username: ';
+      $user = <>;
+      chomp($user);
+      # Reject null usernames.
+      unless($user) {
+	print "We're going to need a username here, or we can't continue.\n";
+	next;
+      }
+    }
+    # See if that username exists in the directory.
+    &debug_print("Seeing whether '$user' is already a user ...");
+    my $user_exists = &entryexists($ldap, $user, 'user');
+    return undef unless defined $user_exists;
+    # If we've made it this far without a "next," set $done flag so loop will
+    # exit.
+    $done = 1;
+  }
+  # Now see whether or not the user is active.  The attribute is called
+  # "nsAccountLock".  It is Boolean and can only be "true" or "false", but the
+  # 389-ds system only checks whether the attribute exists at all.  In fact, if
+  # you set it to anything other than "true", it will automatically change it
+  # to "true".  If the attribute exists, the user is considered 'inactivated.'
+  my $attr = 'nsAccountLock';
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{user},
+     filter => &specfilter($user, 'user'),
+     attrs => [ 'uid', $attr ],
+    ) or return undef;
+  # If there were more than one entry returned, that would be a problem.
+  if(scalar($search->entries) > 1) {
+    warn "More than one account exists with name '$user'.  This is a problem.\n";
+    return undef;
+  }
+  my($entry) = $search->entries;
+  my($curr_nsal) = $entry->get_value($attr);
+  printf "user: %s, %s: %s\n", $user, $attr, $curr_nsal || '(undef)';
+  if(defined $curr_nsal and $cmdopt->{n}) {
+    warn "User '$user' is already marked inactive.  Doing nothing.\n";
+    return undef;
+  } elsif(!defined $curr_nsal and $cmdopt->{y}) {
+    warn "User '$user' is already marked active.  Doing nothing.\n";
+    return undef;
+  }
+  # Now we know that whichever operation we're doing, it needs doing.
+  my %modhash = ();
+  my $actioning = '';
+  my $actioned = '';
+  if($cmdopt->{n}) {
+    $modhash{add} = { $attr => 'true' };
+    $actioning = 'deactivating';
+    $actioned = 'deactivated';
+  } elsif($cmdopt->{y}) {
+    $modhash{delete} = [ $attr ];
+    $actioning = 'activating';
+    $actioned = 'activated';
+  }
+  my $mod_result = &ldaperr($ldap, $ldap->modify
+			    (
+			     &dn($user, 'user'),
+			     %modhash,
+			    ), "$actioning user '$user'");
+  return undef unless defined $mod_result;
+  printf "User '%s' %s.\n", $user, $actioned;
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_user_add {
+  # Handle the 'user add' command, in which we add a user (and its associated
+  # group, if necessary) to the database, prompting for any information not
+  # given on the command line.  Note that there isn't an 'add' command with
+  # 'user' or 'group' arguments -- this is because there's no symmetry here;
+  # this creates a user and a group, if necessary, and makes sure the user is
+  # in the group.
+  my($user, $cmdopt) = @_;
+
+  # If $cmdopt->{i} is specified, run a sanity check or three on its value.
+  if(exists $cmdopt->{i}) {
+    unless(defined $cmdopt->{i}) {
+      warn "You somehow specified an undefined value for -i.  Stop that.\n";
+      return undef;
+    }
+    if($cmdopt->{i} =~ /^\s*$/) {
+      warn "Blank strings are not allowed as UID/GID numbers.\n";
+      return undef;
+    }
+    if($cmdopt->{i} =~ /\D/) {
+      warn("The UID/GID must be a nonnegative integer; no nonnumeric characters allowed.\n");
+      return undef;
+    }
+    if($cmdopt->{i} < 500) {
+      warn("UID/GID values under 500 are reserved for system processes.\n");
+      return undef;
+    }
+  }
+
+  # Make sure we have a username (what LDAP calls a uid -- what Linux calls a
+  # UID, LDAP calls a uidNumber).
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $done = '';			# Doneness flag
+  until($done) {
+    # If no username was given on the command line (or if it was invalid for
+    # some reason and we cleared it; see below), prompt for one.
+    unless($user) {
+      print 'Username: ';
+      $user = <>;
+      chomp($user);
+      # Reject null usernames.
+      unless($user) {
+	print "We're going to need a username here, or we can't continue.\n";
+	next;
+      }
+    }
+    # See if that username exists in the directory.
+    &debug_print("Seeing whether '$user' is already a user ...");
+    my $user_exists = &entryexists($ldap, $user, 'user');
+    return undef unless defined $user_exists;
+    if($user_exists) {
+      # Username already taken -- restart the loop, setting $user to a blank
+      # string so it'll prompt (or prompt again).
+      print "That username already exists. You must choose a username that doesn't conflict with an existing user or group name.\n";
+      $user = '';
+      next;
+    }
+    # See if a group with that name exists.
+    &debug_print("Seeing whether '$user' is already a group ...");
+    my $group_exists = &entryexists($ldap, $user, 'group');
+    return undef unless defined $group_exists;
+    if($group_exists) {
+      # A group with that name does exist -- restart the loop, setting $user
+      # to a blank string so it'll prompt (again).
+      print "A group with that name already exists. You must choose a username that doesn't conflict with an existing user or group name.\n";
+      $user = '';
+      next;
+    }
+    # If we've made it this far without a "next," set $done flag so loop will exit.
+    $done = 1;
+  }
+
+  # The full name (cn):
+  until($cmdopt->{n}) {
+    print 'Full name: ';
+    $cmdopt->{n} = <>;
+    chomp($cmdopt->{n});
+    unless($cmdopt->{n}) {
+      print "I'm not about to add a user to the system if you don't even know their name.\n";
+    }
+  }
+
+  # The email:
+  until($cmdopt->{e}) {
+    print 'Email: ';
+    $cmdopt->{e} = <>;
+    chomp $cmdopt->{e};
+    unless($cmdopt->{e}) {
+      print "If we don't know their email, we can't contact them.\n";
+    }
+  }
+
+  # If $cmdopt->{i} is defined (a specified UID/GID from the command line), make
+  # sure that users/groups with that UID/GID don't already exist.  Otherwise,
+  # find an unused one starting at $UIDGIDBASE.
+  my $id;
+  if(exists $cmdopt->{i}) {
+    # Search for a user with that numeric UID.
+    my $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{user},
+       filter => sprintf('(&(objectClass=%s)(uidNumber=%d))',
+			 $CLASS{user}, $cmdopt->{i}),
+       attrs => [ 'uid', 'uidNumber' ],
+      ) or return undef;
+    if($search->entries > 0) {
+      my($entry) = $search->entries;
+      my($user) = $entry->get_value('uid');
+      warn "Cannot use UID/GID '$cmdopt->{i}'; it is already taken by user '$user'.\n";
+      &ldapclose($ldap);
+      return undef;
+    }
+    # Search for a group with that numeric GID.
+    $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{group},
+       filter => sprintf('(&(objectClass=%s)(gidNumber=%d))',
+			 $CLASS{group}, $cmdopt->{i}),
+       attrs => [ 'cn', 'gidNumber' ],
+      ) or return undef;
+    if($search->entries > 0) {
+      my($entry) = $search->entries;
+      my($group) = $entry->get_value('cn');
+      warn "Cannot use UID/GID '$cmdopt->{i}'; it is already taken by group '$group'.\n";
+      &ldapclose($ldap);
+      return undef;
+    }
+    $id = $cmdopt->{i};
+  } else {
+    # Find an unused UID/GID combo.  Start by getting all the UID and GID
+    # numbers that exist.  It's either this or perform lots of separate
+    # searches, and this technique is just fine as long as there aren't
+    # thousands of users and groups, and that's not likely to ever happen (at
+    # time of writing this, there were 32).
+    print "Searching for suitable UID/GID ...\n";
+    my $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{user},
+       filter => &genfilter('user'),
+       attrs => [ 'uidNumber' ],
+      ) or return undef;
+    my %uidexists = ();
+    foreach my $entry ($search->entries) {
+      my $id = $entry->get_value('uidNumber')*1;
+      $uidexists{$id}++;
+    }
+    $search = &ldapsearch
+      (
+       $ldap,
+       base => $BASEDN{group},
+       filter => &genfilter('group'),
+       attrs => [ 'gidNumber' ],
+      ) or return undef;
+    my %gidexists = ();
+    foreach my $entry ($search->entries) {
+      my $thisid = $entry->get_value('gidNumber')*1;
+      $gidexists{$thisid}++;
+    }
+    for($id = $UIDGIDBASE; 1; $id++) {
+      # We need the same uidNumber and gidNumber to be free.
+      last unless $uidexists{$id} or $gidexists{$id};
+    }
+  }
+
+  # Figure out some other fields
+  my $userdn = &dn($user, 'user');
+  my @namesplit = split /\s+/, $cmdopt->{n};
+  my %userentry =
+    (
+     objectClass => [ qw ( account
+			   posixAccount
+			   top
+			   shadowAccount
+			   person
+			   organizationalPerson
+			   inetOrgPerson ) ],
+     uid => $user,
+     userPassword => $user,
+     cn => $cmdopt->{n},
+     mail => $cmdopt->{e},
+     uidNumber => $id,
+     gidNumber => $id,
+     loginShell => '/bin/bash',
+     homeDirectory => "/home/$user",
+     gecos => "$cmdopt->{n} <$cmdopt->{e}>",
+     givenName => $namesplit[0],
+     sn => $namesplit[-1],
+    );
+  if($cmdopt->{p}) {
+    $userentry{gecos} .= ' '.$cmdopt->{p};
+    $userentry{telephoneNumber} = $cmdopt->{p};
+  }
+
+  # Yeah, we just split the user's full name by whitespace and defined the
+  # first name as the first element of that and the last name as the last
+  # element of that.  This wouldn't work in a lot of people's cases (Ludwig
+  # Mies van der Rohe, for example, or Heather St. James), but it won't mess
+  # anything up terribly if it's wrong until it can be corrected by hand.
+
+  my $groupdn = &dn($user, 'group');
+  my %groupentry =
+    (
+     objectClass => [ qw ( posixGroup
+			   top
+			   groupOfUniqueNames
+			   groupOfNames ) ],
+     cn => $user,
+     gidNumber => $id,
+     description => "Default group for user $user",
+     uniqueMember => $userdn,
+     memberUid => $user,
+    );
+
+  print "Adding user '$user'\n";
+  print "Name: $cmdopt->{n}\n";
+  print "Email: $cmdopt->{e}\n";
+  print "UID/GID: $id\n";
+  my $ok;
+  until($ok) {
+    print "Is this OK (y/n)? ";
+    $ok = <>;
+    chomp $ok;
+    unless($ok eq 'y' or $ok eq 'n') {
+      print "We need a y or n here.\n";
+      $ok = '';
+    }
+  }
+  if($ok eq 'y') {
+    if($glopt{t}) {
+      test_printf "New user record:";
+      test_printf "  dn: %s", $userdn;
+      foreach my $key (sort keys %userentry) {
+	my $value;
+	if(ref($userentry{$key})) {
+	  $value = join ', ', @{$userentry{$key}};
+	} else {
+	  $value = $userentry{$key};
+	}
+	test_printf "  %s: %s", $key, $value;
+      }
+      test_printf '';
+      test_printf "New group record:";
+      test_printf "  dn: %s", $groupdn;
+      foreach my $key (sort keys %groupentry) {
+	my $value;
+	if(ref($groupentry{$key})) {
+	  $value = join ', ', @{$groupentry{$key}};
+	} else {
+	  $value = $groupentry{$key};
+	}
+	test_printf "  %s: %s", $key, $value;
+      }
+    } else {
+      # Add the user, then the group.
+      my $add_result = &ldaperr($ldap, $ldap->add
+	(
+	 $userdn,
+	 attrs => [ map { $_ => $userentry{$_} } keys %userentry ],
+	), 'adding a user entry');
+      return undef unless defined $add_result;
+      $add_result = &ldaperr($ldap, $ldap->add
+	(
+	 $groupdn,
+	 attrs => [ map { $_ => $groupentry{$_} } keys %groupentry ],
+	), 'adding a group entry');
+      return undef unless defined $add_result;
+      print "User added.\n";
+    }
+  } else {
+    print "Canceled. No change made.\n";
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_check {
+  # Handle the 'check' subcommand, searching for whatever I consider to be an
+  # inconsistency or problem with the data in the directory.
+  my $ldap = &ldapbind or return undef;
+  # One major issue is with groups' 'memberUid' and 'uniqueMember' attributes;
+  # often these will be different.  They should contain the same users.  Some
+  # search schemas use one attribute, and some use the other.
+  my %memberUid = ();
+  my %uniqueMember = ();
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{group},
+     filter => &genfilter('group'),
+     attrs => [ 'cn', 'memberUid', 'uniqueMember' ],
+    ) or return undef;
+  foreach my $entry ($search->entries) {
+    my($group) = $entry->get_value('cn');
+    $memberUid{$group} = [ sort $entry->get_value('memberUid') ];
+    if($glopt{d}) {
+      &debug_print(sprintf 'Group %s: memberUid=%s',
+		   $group, join(', ', @{$memberUid{$group}}));
+    }
+    # Now, uniqueMember will be DNs, while memberUid will just be usernames
+    $uniqueMember{$group} = [ sort map {
+      /^uid=(.*),ou=People,\Q$BASEDN\E$/
+    } $entry->get_value('uniqueMember') ];
+    if($glopt{d}) {
+      &debug_print(sprintf 'Group %s: uniqueMember=%s',
+		   $group, join(', ', @{$uniqueMember{$group}}));
+    }
+    my $compare = List::Compare->new($memberUid{$group}, $uniqueMember{$group});
+    unless($compare->is_LequivalentR) {
+      print "Group member mismatch in group '$group':\n";
+      printf "  Users only in 'memberUid': %s\n", join(', ', $compare->get_unique);
+      printf "  Users only in 'uniqueMembers': %s\n", join(', ', $compare->get_complement);
+    }
+  }
+  # Another potential issue is users who don't exist in the directory but still
+  # exist in groups.  Look for those.
+  my %user = ();
+  $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{user},
+     filter => &genfilter('user'),
+     attrs => [ $RDNA{user} ],
+    ) or return undef;
+  foreach my $entry ($search->entries) {
+    $user{$entry->get_value($RDNA{user})}++;
+  }
+  foreach my $group (keys %memberUid) {
+    foreach my $memberUid (@{$memberUid{$group}}) {
+      unless($user{$memberUid}) {
+	printf "User '%s' is a memberUid of group '%s' but doesn't exist\n", $memberUid, $group;
+      }
+    }
+  }
+  foreach my $group (keys %uniqueMember) {
+    foreach my $uniqueMember (@{$uniqueMember{$group}}) {
+      unless($user{$uniqueMember}) {
+	printf "User '%s' is a uniqueMember of group '%s' but doesn't exist\n", $uniqueMember, $group;
+      }
+    }
+  }
+  # Another weirdness is when a user isn't in their own default group, or
+  # doesn't even have a default group.
+  foreach my $user (sort keys %user) {
+    unless(exists $memberUid{$user} or exists $uniqueMember{$user}) {
+      printf "User '%s' doesn't have a default group.\n", $user;
+      next;
+    }
+    if(exists $memberUid{$user}) {
+      unless(grep { $_ eq $user } @{$memberUid{$user}}) {
+	printf "User '%s' isn't a memberUid of default group '%s'.\n", $user, $user;
+      }
+    }
+    if(exists $uniqueMember{$user}) {
+      unless(grep { $_ eq $user } @{$uniqueMember{$user}}) {
+	printf "User '%s' isn't a uniqueMember of default group '%s'.\n", $user, $user;
+      }
+    }
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_group_del {
+  # Handle the 'group del' subcommand.
+  my($group) = @_;
+  unless($group) {
+    warn "You must specify a group to delete.\n";
+    return undef;
+  }
+  # Make sure the group exists in the first place.
+  my $ldap = &ldapbind or return undef;
+  my $exists = &entryexists($ldap, $group, 'group');
+  return undef unless defined $exists;
+  unless($exists) {
+    warn "Group '$group' doesn't exist; can't delete.\n";
+    return undef;
+  }
+
+  # Confirm this potentially earth-shaking action with the person at the
+  # terminal.
+  print <<"EOF";
+
+Are you sure you really want to delete group '$group'?
+
+EOF
+  ;
+  my $response = '';
+  until($response) {
+    print 'Are you really sure you want to do this (y/n)? ';
+    $response = <>;
+    chomp $response;
+    unless($response eq 'y' or $response eq 'n') {
+      print "How about a y or an n?  Otherwise I don't know what you mean.\n";
+      $response = '';
+    }
+  }
+  unless($response eq 'y') {
+    warn "OK, aborting operation.\n";
+    &ldapclose($ldap);
+    return undef;
+  }
+
+  # Delete the group.
+  my $del_result = &ldapdelete($ldap, &dn($group, 'group')) or return undef;
+
+  # All seems to have gone well.
+  print "Group '$group' deleted.\n";
+  return 1;
+}
+
+sub do_user_del {
+  # Handle the 'user del' subcommand.  This means not only to delete the user,
+  # and not only to delete its default group, but also to search through all
+  # groups and remove it from any groups we find it in.
+  my($user) = @_;
+  unless($user) {
+    warn "You must specify a username to delete.\n";
+    return undef;
+  }
+  # Make sure the user exists in the first place.
+  my $ldap = &ldapbind or return undef;
+  my $exists = &entryexists($ldap, $user, 'user');
+  return undef unless defined $exists;
+  unless($exists) {
+    warn "User '$user' doesn't exist; can't delete.\n";
+    return undef;
+  }
+
+  # Confirm this potentially earth-shaking action with the person at the
+  # terminal.
+  print <<"EOF";
+
+Are you sure you really want to delete user '$user'?  This will remove the user
+from every group they are currently in and will also delete the default group
+with the same name.
+
+EOF
+  ;
+  my $response = '';
+  until($response) {
+    print 'Are you really sure you want to do this (y/n)? ';
+    $response = <>;
+    chomp $response;
+    unless($response eq 'y' or $response eq 'n') {
+      print "How about a y or an n?  Otherwise I don't know what you mean.\n";
+      $response = '';
+    }
+  }
+  unless($response eq 'y') {
+    warn "OK, aborting operation.\n";
+    &ldapclose($ldap);
+    return undef;
+  }
+
+  # OK, get all groups that exist and go through their list of users to find
+  # this one.
+  my %inMemberUid = ();
+  my %inUniqueMember = ();
+  my %groups = ();
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{group},
+     filter => &genfilter('group'),
+     attrs => [ 'cn', 'memberUid', 'uniqueMember' ],
+    ) or return undef;
+  foreach my $entry ($search->entries) {
+    my($group) = $entry->get_value('cn');
+    if(grep { $_ eq $user } $entry->get_value('memberUid')) {
+      $groups{$group}++;
+      $inMemberUid{$group}++;
+    }
+    if(grep { $_ eq &dn($user, 'user') } $entry->get_value('uniqueMember')) {
+      $groups{$group}++;
+      $inUniqueMember{$group}++;
+    }
+  }
+  foreach my $group (keys %groups) {
+    my %modhash = ();
+    if($inMemberUid{$group}) {
+      push @{$modhash{delete}->{memberUid}}, $user;
+    }
+    if($inUniqueMember{$group}) {
+      push @{$modhash{delete}->{uniqueMember}}, &dn($user, 'user');
+    }
+    if(%modhash) {
+      my $mod_result = &ldaperr($ldap, $ldap->modify
+				(
+				 &dn($group, 'group'),
+				 %modhash,
+				), "removing user '$user' from group '$group'");
+      return undef unless defined $mod_result;
+    }
+  }
+
+  # Now we want to make sure to delete the user's default group.
+  my $del_result = &ldapdelete($ldap, &dn($user, 'group')) or return undef;
+
+  # Finally delete the user.
+  $del_result = &ldapdelete($ldap, &dn($user, 'user')) or return undef;
+
+  # All seems to have gone well.
+  print "User '$user' deleted.\n";
+  return 1;
+}
+
+sub do_group_dump {
+  # Handle 'group dump'.
+  return &do_dump('groups');
+}
+
+sub do_host_dump {
+  # Handle 'host dump'.
+  return &do_dump('hosts');
+}
+
+sub do_user_dump {
+  # Handle 'user dump'.
+  return &do_dump('users');
+}
+
+sub do_dump {
+  # Handle the 'dump' subcommand.
+  my($which) = @_;
+  unless(defined $which
+	 and ($which eq 'users' or $which eq 'groups' or $which eq 'hosts')) {
+    warn("You must specify 'users', 'groups', or 'hosts'.\n");
+    return undef;
+  }
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $singular = $which;
+  $singular =~ s/s$//;
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{$singular},
+     filter => &genfilter($singular),
+    ) or return undef;
+  foreach my $entry ($search->entries) {
+    $entry->dump;
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_group_edit {
+  # Adds users specified by the -a option.  Removes users specified by the -r
+  # option.
+  my($group, $cmdopt) = @_;
+  unless($cmdopt->{a} or $cmdopt->{r}) {
+    warn "No changes made.\n";
+    return 1;
+  }
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+
+  # The group must exist.  I'd use &entryexists here, but we also need to look
+  # up information in the group entry, so we might as well kill two birds with
+  # one method call.
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{group},
+     filter => &specfilter($group, 'group'),
+     attrs => [ 'cn', 'memberUid', 'uniqueMember' ],
+    ) or return undef;
+  unless($search->count > 0) {
+    warn "Group '$group' does not exist.\n";
+    return undef;
+  }
+  unless($search->count == 1) {
+    # This shouldn't happen, so test for it.
+    warn "There was more than one search result for group '$group' -- very odd.\n";
+    return undef;
+  }
+  my($entry) = $search->entries;
+  my @memberUids = $entry->get_value('memberUid');
+  if($glopt{d}) {
+    &debug_print("$group\'s current memberUids: ".join(', ', @memberUids));
+  }
+  my @uniqueMembers = $entry->get_value('uniqueMember');
+  if($glopt{d}) {
+    &debug_print("$group\'s current uniqueMembers: ".join(', ', map { /^uid=(.*),ou=People,\Q$BASEDN\E$/ } @uniqueMembers));
+  }
+  my $groupdn = &dn($group, 'group');
+  my %modargs = ();
+
+  # For any users to add, we should make sure they exist and that they're not
+  # already in the group.
+  if($cmdopt->{a}) {
+    foreach my $user (split /\s*,\s*/, $cmdopt->{a}) {
+      my $exists = &entryexists($ldap, $user, 'user');
+      return undef unless defined $exists;
+      unless($exists) {
+	warn "User '$user' does not exist.\n";
+	return undef;
+      }
+      if(grep { $_ eq $user } @memberUids) {
+	warn "User '$user' already found in memberUid.  Skipping.\n";
+      } else {
+	push @{$modargs{add}->{memberUid}}, $user;
+      }
+      my $userdn = &dn($user, 'user');
+      if(grep { $_ eq $userdn } @uniqueMembers) {
+	warn "User DN '$userdn' already found in uniqueMember.  Skipping.\n";
+      } else {
+	push @{$modargs{add}->{uniqueMember}}, $userdn;
+      }
+    }
+  }
+
+  # For any users to remove, they must exist in the group, at least.  It is
+  # possible that they don't exist in the directory anymore -- one might delete
+  # the user and then discover groups they're still in.  The 'deleteuser'
+  # command is supposed to remove the user from any groups they're in before
+  # deleting the user entry.
+  if($cmdopt->{r}) {
+    foreach my $user (split /\s*,\s*/, $cmdopt->{r}) {
+      if(grep { $_ eq $user } @memberUids) {
+	push @{$modargs{delete}->{memberUid}}, $user;
+      } else {
+	warn "User '$user' not found in memberUid.  Skipping.\n";
+      }
+      my $userdn = &dn($user, 'user');
+      if(grep { $_ eq $userdn } @uniqueMembers) {
+	push @{$modargs{delete}->{uniqueMember}}, $userdn;
+      } else {
+	warn "User DN '$userdn' not found in uniqueMember.  Skipping.\n";
+      }
+    }
+  }
+
+  unless(%modargs) {
+    warn "Nothing to do.\n";
+    return 1;
+  }
+
+  # Do the add and remove actions.
+  my $mod_result = &ldaperr($ldap, $ldap->modify
+			    (
+			     $groupdn,
+			     %modargs,
+			    ), 'adding/removing users from groups');
+  return undef unless defined $mod_result;
+  printf "Users added: %s\n", join(', ', @{$modargs{add}->{memberUid}}) if exists $modargs{add};
+  printf "Users removed: %s\n", join(', ', @{$modargs{delete}->{memberUid}}) if exists $modargs{delete};
+  return 1;
+}
+
+sub do_user_edit {
+  # Modifies the user record given.  The -p option resets a user's password.
+  my($user, $cmdopt) = @_;
+  unless($cmdopt->{p}) {
+    warn "No changes made.\n";
+    return 1;
+  }
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+
+  # The user must exist.
+  my $exists = &entryexists($ldap, $user, 'user');
+  return undef unless defined $exists;
+  unless($exists) {
+    warn "User '$user' doesn't exist; can't modify.\n";
+    return undef;
+  }
+  my $userdn = &dn($user, 'user');
+  my @modargs = ();
+
+  # We only have password currently.
+  if($cmdopt->{p}) {
+    push @modargs,
+      (
+       replace =>
+       {
+	'userPassword' => $cmdopt->{p},
+       },
+      );
+  }
+
+  unless(@modargs) {
+    warn "Nothing to do.\n";
+    return 1;
+  }
+
+  # Do the actions.
+  if($glopt{t}) {
+    test_printf 'DN: %s', $userdn;
+    test_printf '@modargs: %s', Dumper(\@modargs);
+  } else {
+    my $mod_result = &ldaperr($ldap, $ldap->modify
+			      (
+			       $userdn,
+			       @modargs,
+			      ), "modifying user $user");
+    return undef unless defined $mod_result;
+    printf "User '%s' modified.\n", $user;
+  }
+  return 1;
+}
+
+sub do_group_list {
+  # Handle 'group list'.
+  return &do_list('group');
+}
+
+sub do_host_list {
+  # Handle 'host list'.
+  return &do_list('host');
+}
+
+sub do_user_list {
+  # Handle 'user list'.
+  return &do_list('user');
+}
+
+sub do_list {
+  # Handle 'group/host/user list'.
+  my($which) = @_;
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my(@attrs, $sortby, $sortnum);
+  if($which eq 'user') {
+    @attrs = qw(uidNumber uid gecos nsAccountLock);
+    $sortby = 'uidNumber';
+    $sortnum = 1;
+  } elsif($which eq 'group') {
+    @attrs = qw(gidNumber cn memberUid);
+    $sortby = 'gidNumber';
+    $sortnum = 1;
+  } elsif($which eq 'host') {
+    @attrs = qw(ipHostNumber cn);
+    $sortby = 'ipHostNumber';
+    $sortnum = '';
+  }
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{$which},
+     filter => &genfilter($which),
+     attrs => \@attrs,
+    ) or return undef;
+  my @data = ();
+  foreach my $entry ($search->entries) {
+    my %record = ();
+    foreach my $attr (@attrs) {
+      my @values = $entry->get_value($attr);
+      if($#values > 0) {
+	$record{$attr} = \@values;
+      } elsif($#values == 0) {
+	$record{$attr} = $values[0];
+	if($which eq 'user' and $attr eq 'nsAccountLock') {
+	  if($record{$attr} eq 'true') {
+	    $record{$attr} = 'Deactivated';
+	  } else {
+	    $record{$attr} = 'Activated';
+	  }
+	}
+      } else {
+	if($which eq 'user' and $attr eq 'nsAccountLock') {
+	  $record{$attr} = 'Activated';
+	} else {
+	  $record{$attr} = undef;
+	}
+      }
+    }
+    push @data, \%record;
+  }
+  if($sortnum) {
+    @data = sort { $a->{$sortby} <=> $b->{$sortby} } @data;
+  } else {
+    @data = sort { $a->{$sortby} cmp $b->{$sortby} } @data;
+  }
+  foreach my $rec (@data) {
+    my @output = ();
+    foreach my $attr (@attrs) {
+      if(ref($rec->{$attr})) {
+	push @output, join(',', @{$rec->{$attr}});
+      } elsif(defined($rec->{$attr})) {
+	push @output, $rec->{$attr};
+      }
+    }
+    print join(' ', @output), "\n";
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_group_show {
+  # Handle 'group show' command.
+  my($group, $cmdopt) = @_;
+  &do_show('group', $group);
+}
+
+sub do_host_show {
+  # Handle 'host show' command.
+  my($host, $cmdopt) = @_;
+  &do_show('host', $host);
+}
+
+sub do_user_show {
+  # Handle 'user show' command.
+  my($user, $cmdopt) = @_;
+  &do_show('user', $user);
+}
+
+sub do_show {
+  # Handle 'group/host/user show'.
+  my($which, $arg) = @_;
+  debug_printf "do_show('%s', '%s')", $which, $arg;
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my(@attrs) = ();
+  if($which eq 'user') {
+    @attrs = qw(uidNumber uid gecos createtimestamp nsAccountLock);
+  } elsif($which eq 'group') {
+    @attrs = qw(gidNumber cn memberUid);
+  } elsif($which eq 'host') {
+    @attrs = qw(ipHostNumber cn);
+  }
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{$which},
+     filter => &specfilter($arg, $which),
+     attrs => \@attrs,
+    ) or return undef;
+  my @data = ();
+  foreach my $entry ($search->entries) {
+    my %record = ();
+    foreach my $attr (@attrs) {
+      my @values = $entry->get_value($attr);
+      if($#values > 0) {
+	$record{$attr} = \@values;
+      } elsif($#values == 0) {
+	$record{$attr} = $values[0];
+      } else {
+	$record{$attr} = undef;
+      }
+    }
+    push @data, \%record;
+  }
+  foreach my $rec (@data) {
+    my @output = ();
+    foreach my $attr (@attrs) {
+      if(ref($rec->{$attr})) {
+	# We have a multivalued attribute.
+	my $values = $rec->{$attr};
+	push @output, join(',', @$values);
+      } elsif(defined($rec->{$attr})) {
+	# A single-valued attribute.
+	my $value = $rec->{$attr};
+	if($which eq 'user' and $attr eq 'nsAccountLock') {
+	  $value = (($value eq 'true')? 'Deactivated' : 'Activated');
+	}
+	push @output, $value;
+      } else {
+	# nsAccountLock is normally undefined for users, which means the
+	# account is not locked/deactivated.
+	if($which eq 'user' and $attr eq 'nsAccountLock') {
+	  push @output, 'Activated';
+	}
+      }
+    }
+    print join(' ', @output), "\n";
+  }
+  &ldapclose($ldap);
+  return 1;
+}
+
+sub do_group {
+  # Handle the 'group' command
+  my($arg, $cmdopt, $parse) = @_;
+  if($cmdopt->{h}) {
+    &print_group_help;
+    exit 0;
+  }
+  return &handle_cmd(shift @ARGV, $parse);
+}
+
+sub do_host {
+  # Handle the 'host' command
+  my($arg, $cmdopt, $parse) = @_;
+  if($cmdopt->{h}) {
+    &print_host_help;
+    exit 0;
+  }
+  return &handle_cmd(shift @ARGV, $parse);
+}
+
+sub do_user {
+  # Handle the 'user' command
+  my($arg, $cmdopt, $parse) = @_;
+  if($cmdopt->{h}) {
+    &print_user_help;
+    exit 0;
+  }
+  return &handle_cmd(shift @ARGV, $parse);
+}
+
+sub do_group_next {
+  # Handle 'group next'.
+  my(undef, $cmdopt) = @_;
+  return &do_next('group', $cmdopt);
+}
+
+sub do_user_next {
+  # Handle 'user next'.
+  my(undef, $cmdopt) = @_;
+  return &do_next('user', $cmdopt);
+}
+
+sub do_next {
+  # Handle the 'next' command, in which we find the next available UID or GID
+  # starting with $UIDGIDBASE.
+  my($which, $cmdopt) = @_;
+  unless(defined $which and ($which eq 'user' or $which eq 'group')) {
+    warn "You must specify 'user' or 'group'.\n";
+    return undef;
+  }
+  my $startid = $cmdopt->{s}?$cmdopt->{s}:$UIDGIDBASE;
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $attr;
+  if($which eq 'user') {
+    $attr = 'uidNumber';
+  } elsif($which eq 'group') {
+    $attr = 'gidNumber';
+  }
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN{$which},
+     filter => &genfilter($which),
+     attrs => [ $attr ],
+    );
+  return undef unless defined $search;
+  my %exists = ();
+  foreach my $entry ($search->entries) {
+    my $id = $entry->get_value($attr)*1;
+    $exists{$id}++;
+  }
+  my $id;
+  for($id = $startid; 1; $id++) {
+    last unless $exists{$id};
+  }
+  printf "%d\n", $id;
+  &ldapclose($ldap);
+  return $id;
+}
+
+sub do_search {
+  # Handle the 'search' subcommand.  Basically just perform the search and dump
+  # the results, if any.
+  my($query) = @_;
+  return undef unless $query;
+  my $ldap = &ldapbind;
+  return undef unless $ldap;
+  my $search = &ldapsearch
+    (
+     $ldap,
+     base => $BASEDN,
+     filter => $query
+    ) or return undef;
+  foreach my $entry ($search->entries) {
+    $entry->dump;
+  }
+  return $search->count;
+}
+
+sub handle_cmd {
+  # Handle the command.  Returns whatever the command handler returned (which
+  # will be undef if something went wrong), or undef if the command was
+  # unknown.
+  my($cmd, $parse) = @_;
+  unless(defined $cmd) {
+    warn("No command given.\n");
+    &print_help;
+    return undef;
+  }
+  if(exists $parse->{$cmd}) {
+    my $arg = '';
+    if($parse->{$cmd}->{_arg}) {
+      $arg = shift(@ARGV);
+    }
+    my %cmd_opts = ();
+    getopts($parse->{$cmd}->{_opts}, \%cmd_opts);
+    return $parse->{$cmd}->{_handler}($arg, \%cmd_opts, $parse->{$cmd});
+  } else {
+    warn("Unknown command $cmd\n");
+    return undef;
+  }
+}
+
+###############################################################################
+# Main Program
+###############################################################################
+
+&handle_glopts;
+&handle_cmd(shift @ARGV, \%cmdparse);
