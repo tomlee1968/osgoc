@@ -1,0 +1,317 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+###############################################################################
+# Modules
+###############################################################################
+
+use Carp;
+use Curses::UI;
+use Encode;
+use YAML;
+
+package Curses::UI::Listbox;
+
+# A routine that you'd think Curses::UI would have, but doesn't
+sub set_active_value($$) {
+  # Looks for the given value in the listbox, and if it is there, sets
+  # the active value (the one the highlight cursor is on) to that
+  # one. If it isn't there, doesn't do anything.
+
+  my $this = shift;
+  my $value = shift;
+  my $id = 0;
+  my $found = undef;
+  foreach my $test (@{$this->{'-values'}}) {
+    if($test eq $value) {
+      $found = 1;
+      last;
+    }
+    $id++;
+  }
+  if($found) {
+    $this->{-ypos} = $id;
+    $this->run_event('-onselchange');
+    $this->schedule_draw(1);
+  }
+}
+
+package Curses::UI::TextEditor;
+
+sub center_text($$) {
+  # Given a reference to an array of strings, attempt to center those
+  # strings on the TextEditor object, both horizontally and
+  # vertically.
+
+  my($self, $strings) = @_;
+
+  my $text = "\n"x(($self->height - scalar(@$strings))/2);
+  my $width = $self->width;
+  foreach my $line (@$strings) {
+    $text .= ' 'x(($width - (length $line))/2) . $line . "\n";
+  }
+  $self->text($text);
+}
+
+package Curses::UI::Widget;
+
+sub x($) {
+  my($this) = @_;
+  return $this->{'-x'};
+}
+
+sub y($) {
+  my($this) = @_;
+  return $this->{'-y'};
+}
+
+sub child($$) {
+  my($this, $id) = @_;
+  return $this->{-id2object}->{$id};
+}
+
+package main;
+
+$ENV{ESCDELAY} = 1;
+
+###############################################################################
+# Prepare for plugins
+###############################################################################
+
+package TUItility::Mode;
+
+require Exporter;
+use Module::Pluggable instantiate => 'new',
+  search_path => 'TUItility::Mode';
+
+our $VERSION = 1.00;
+our @ISA = qw(Exporter);
+our @EXPORT = qw(register_plugin change_mode child);
+our %mode_enter = ();
+our %mode_exit = ();
+our $mode = 'none';
+
+sub new {
+  my($self) = @_;
+  return bless {};
+}
+
+sub register_plugin($$$$) {
+  my($mode, $label, $enter, $exit) = @_;
+  $mode_enter{$mode} = $enter;
+  $mode_exit{$mode} = $exit;
+  unless($mode eq 'none') {
+    push @main::utility_menu,
+      {
+       -label => $label,
+       -value => sub { &change_mode($mode); },
+      };
+  }
+}
+
+sub change_mode($) {
+  my($newmode) = @_;
+  return if($newmode eq $mode);
+  &{$mode_exit{$mode}};
+  $mode = $newmode;
+  &{$mode_enter{$mode}};
+}
+
+###############################################################################
+# None mode
+###############################################################################
+
+# This exists as a bare minimum mode to serve as an illustration of
+# the minimal amount of work you have to do to define a mode.
+
+package TUItility::Mode::None;
+
+TUItility::Mode->import;
+
+our($cui, $menu, $mw, $mtv);
+
+sub new($$) {
+  my($self, $c) = @_;
+  $cui = $c;
+  $menu = $c->child('menu');
+  $mw = $c->child('mw');
+  $mtv = $mw->child('mtv');
+  &register_plugin('none', 'None', \&mode_enter, \&mode_exit);
+  return bless {};
+}
+
+sub mode_enter {
+  $mtv->show;
+  $menu->focus;
+  $cui->draw;
+}
+
+sub mode_exit {
+  $mtv->hide;
+}
+
+###############################################################################
+# Globals
+###############################################################################
+
+package main;
+
+our $debug = '';
+
+our %mode_enter = ();
+our %mode_exit = ();
+our @menu = ();
+our @utility_menu = ();
+our($cui, $menu, $mw, $mtv);
+
+sub init() {
+  $cui = Curses::UI->new
+    (
+     -clear_on_exit => 1,
+     -debug => $debug,
+     -color_support => 1,
+     -mouse_support => 1,
+    );
+
+  @menu =
+    (
+     { -label => 'File',
+       -submenu =>
+       [
+	{ -label => 'Exit      ^Q',
+	  -value => \&doExit, },
+       ]
+     },
+     { -label => 'Utility',
+       -submenu => \@utility_menu },
+    );
+
+  $menu = $cui->add
+    (
+     'menu',
+     'Menubar',
+     -menu => \@menu,
+     -fg  => "blue",
+    );
+
+  $mw = $cui->add
+    (
+     'mw',
+     'Window',
+     -y => 1,
+    );
+
+  $mtv = $mw->add
+    (
+     'mtv',
+     'TextViewer',
+    );
+  my @strings = ('Choose from the Utility menu to begin.',
+		 'Press Ctrl-X to access the menu bar.');
+  $mtv->center_text(\@strings);
+
+  $cui->set_binding(\&handle_interrupt, "\cC");
+  $cui->set_binding(\&handle_debug, "D");
+  $cui->set_binding(\&doExit, "\cQ");
+  $cui->set_binding(sub {$menu->focus()}, "\cX");
+
+  $SIG{'QUIT'} = \&handle_interrupt;
+  $SIG{'INT'} = \&handle_interrupt;
+
+  my $tuit = TUItility::Mode->new;
+  my @plugins = $tuit->plugins($cui);
+#  print STDERR YAML::Dump(\@plugins);
+}
+
+sub handle_interrupt($) {
+  my($sig) = @_;
+  &doExit;
+}
+
+sub doExit {
+  $cui->mainloopExit;
+}
+
+sub add_widget_id_to_main_debug_text($$) {
+  my($id, $w) = @_;
+  $main::debug_text .= $id;
+  if($w->{-focus} == 1) {
+    $main::debug_text .= " (focus)";
+  }
+  $main::debug_text .= "\n";
+}
+
+sub add_only_focused_widgets_to_main_debug_text($$) {
+  my($id, $w) = @_;
+  if(defined $w->{-focus} and $w->{-focus} == 1) {
+    $main::debug_text .= " ".$id;
+  }
+}
+
+sub crawl_widgets($$) {
+  my($id, $widget, $subref) = @_;
+
+  # Starting with the given widget, go through all widgets and call
+  # the given subroutine with all contained widgets as arguments. To
+  # get all widgets, call this with $main::cui.
+  &$subref($id, $widget);
+  while(my($child_id, $child) = each %{$widget->{-id2object}}) {
+    &crawl_widgets($child_id, $child, $subref);
+  }
+}
+
+sub handle_debug {
+  my($dwin, $d);
+  # This prevents a program-ending error if the debug window is already open:
+  return if exists $cui->{-id2object}->{dwin};
+  $dwin = $cui->add
+    (
+     'dwin',
+     'Window',
+     -y => 1,
+     -border => 1,
+     -title => 'Debug - Press Esc to Return, E to dump contents to stderr for capture',
+     -titlefullwidth => 1,
+     -tfg => 'blue',
+     -tbg => 'white',
+    );
+  $d = $dwin->add
+    (
+     'd',
+     'TextViewer',
+     -vscrollbar => 1,
+    );
+  $d->set_binding(sub {
+		    $dwin->delete('d');
+		    $cui->delete('dwin');
+		    $cui->draw;
+		  }, "\c[");
+  $d->set_binding(sub {
+		    warn($d->text);
+		  }, "E");
+  $d->text(YAML::Dump($main::cui));
+#  $main::debug_text = 'Focused:';
+#  &main::crawl_widgets('cui', $main::cui, \&add_only_focused_widgets_to_main_debug_text);
+#  $main::debug_text .= "\n";
+#  $d->text($main::debug_text);
+  $d->draw;
+  $d->focus;
+}
+
+sub show_status {
+  $cui->status("Status box.");
+  $cui->set_timer('close status', sub {$cui->nostatus}, 1);
+  $menu->focus();
+}
+
+###############################################################################
+# Main program
+###############################################################################
+
+package main;
+
+&init;
+# start the event loop
+$cui->mainloop;
