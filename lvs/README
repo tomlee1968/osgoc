@@ -1,0 +1,159 @@
+Documentation for /usr/local/lvs/etc/goc_lvs.conf
+
+The goc_lvs.conf file is the configuration file for the goc_lvs.pl
+script. Please edit the goc_lvs.conf file only on lvs1 (or lvs-itb1, if you're
+working with ITB), as there is a cron job that synchronizes goc_lvs.conf to the
+other lvs server(s). If you make a change intended to be permanent, please make
+the change in the install project
+(ansible/roles/lvs/templates/goc_lvs.conf.prod or goc_lvs.conf.itb) and check
+it into version control. And now, for more details ...
+
+How LVS Works, In Brief
+=======================
+
+LVS (Linux Virtual Server) is a High Availability strategy that lets a group of
+machines look, to the outside world, like a single very powerful server that
+can handle a large number of requests and is never offline. It has three basic
+parts: packet forwarding (using ipvsadm), redundancy with heartbeating (using
+VRRP), and optional real server checking (using various software, but in this
+case we use keepalived).
+
+VRRP (Virtual Router Redundancy Protocol) works like this:
+
+1. Have two or more machines acting as routers, all configured the same way.
+2. VRRP collects real routers together to form a virtual router. What's really
+going on is that only one of the real routers is doing work at any given time
+(the master), while the rest act as backups, ready to step in if the master
+goes down.
+3. Real routers talk to each other to confirm they're online; whenever one goes
+offline or comes online, the active ones decide which one will be the new
+master based on their configuration, and that one takes over doing the
+work. This gives the virtual router high availability.
+
+Keepalived supports VRRP and also does this:
+
+1. For each service, have an ensemble of at least one real server (though
+having only one misses the point and is good only for testing), all configured
+the same way.
+2. Have a virtual IP address the VRRP virtual router (which we just talked
+about) listens on; when packets come in for that IP, it uses an algorithm to
+decide which real server to forward those packets to.
+3. Optionally, define a periodic test to do on the real servers to check
+whether they're up; take any that fail the test out of the ensemble until they
+pass the test again. Of course, it's also possible to take a real server out of
+the ensemble manually for maintenance. This gives the service high availability.
+
+Configuring all of this requires configuring keepalived (whose config files are
+verbose) and iptables (to determine which destination hosts and ports to accept
+packets on and which to reject). Hence goc_lvs.pl, to simplify it all into one
+brief config file, and to permit temporary removal of designated hosts without
+modifying the config file. The goc_lvs.pl script modifies the keepalived and
+iptables configuration files with the same information so you don't have to do
+all that redundant editing by hand.
+
+YAML
+====
+
+The goc_lvs.conf file uses YAML, a standard data serialization format.  See
+complete YAML documentation at http://www.yaml.org.  Every commonly-used
+language has a library/module that reads/writes YAML.  Obviously comments begin
+with #.  Blank lines are ignored.  Do not use tabs to indent, only spaces.
+
+YAML primer:
+* A YAML document (namespace) begins with '---' on a line by itself.
+* A YAML mapping (hash/dictionary/etc.) consists of '<key>: <value>' pairs on
+consecutive lines with the same indentation.
+* A YAML sequence (list/array) replaces the '<key>:' with '-', so you have
+consecutive lines like '- <value>' with the same indentation.
+* If '<value>' is missing from this line and the next line is indented more,
+this line's effective value is the submapping or subsequence that follows.
+
+Example:
+
+---
+key1: value1
+key2: value2
+this_key_contains_an_array:
+  - array_value_1
+  - array_value_2
+this_key_contains_a_hash:
+  subkey1: subvalue1
+  subkey2: subvalue2
+this_key_contains_an_array_of_hashes:
+  -
+    field1: data1
+    field2: data2
+    field3: data3
+  -
+    field1: moredata1
+    field2: moredata2
+    field3: moredata3
+
+goc_lvs.conf
+============
+
+goc_lvs.conf is a YAML file, heavily influenced by the structures of
+keepalived, which in turn are heavily influenced by the requirements of VRRP.
+See https://confluence.grid.iu.edu/display/GOCONLY/GOC+LVS+User%27s+Guide for
+full documentation about this file and its requirements. Here is a brief
+summary:
+
+Main keys: globals and sync_groups
+
+globals: has keys:
+
+  email_to (sequence of strings): email addresses to send mail to
+  email_from (string): email address that email will appear to come from
+  smtp_server (string): fqdn of SMTP server to send mail through
+  smtp_connect_timeout (integer): number of seconds after which mail times out
+
+sync_groups (sequence of mappings): describes sync groups; each mapping has
+keys:
+
+  label (string): name of this sync group
+  id (integer): number for this sync group; must be unique on LAN
+  auth_type (string): how to ID to rest of sync group; only 'password'
+supported
+  auth_pass (string): password to use; all members of sync group must have same
+  advert_int (integer): seconds between heartbeats
+  instances (sequence of mappings): describes each member of sync group; each
+mapping has keys:
+
+    label (string): name of VRRP host
+    hostname (string): fqdn of VRRP host
+    state (string): initial state; 'MASTER' or 'BACKUP'
+    priority (integer 0-255): higher value wins elections for 'MASTER'
+
+  services (sequence of mappings): describes services; each mapping has keys:
+
+    label (string): name of service
+    delay_loop (integer): number of seconds between up checks
+    lb_algo (string): algorithm for selecting real server; various available
+    lb_kind (string): type of packet forwarding; 'DR' = direct routing
+    persistence_timeout (integer): seconds after which new real server chosen
+    vip (string): fqdn/ip of virtual IP to listen on
+    forward (string): ports to forward
+    real_servers (sequence of mappings): describes real servers; each mapping
+has keys:
+
+      label (string): name of real server
+      rip (string): fqdn/ip of real server
+      weight (integer): weight of real server, if lb_algo supports a weight
+      disabled (value unimportant): if present, disable this real server
+      disabled_in (sequence of strings): update groups in which this real
+server should be disabled; this overrides 'disabled' when an update group is
+active
+
+The goc_lvs.conf file is NOT backed up via the standard backup.py method, and
+shouldn't be! Unlike in the past, there is no need to edit the file during OS
+updates (see goc_lvs.pl -h for help), so the only cases I can think of where
+anyone might need to edit goc_lvs.conf are:
+
+* A lasting change: a new service/instance is permanently added, or a
+  service/instance is permanently removed. It is the responsibility of whomever
+  edits it to check the file into the install project in version control, so
+  the change will appear in future installs.
+
+* A temporary change: an instance is disabled temporarily for ad hoc
+  maintenance, testing, etc. This change shouldn't be saved or backed up
+  anywhere.

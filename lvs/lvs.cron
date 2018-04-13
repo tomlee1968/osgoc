@@ -1,0 +1,8 @@
+# Backup LVS configuration
+* * * * * root /usr/local/lvs/bin/rsync_goc_lvs
+
+*/15 * * * * root /opt/service-monitor/lvs/test.sh
+
+#generate the stamp file
+#1,16,31,46 * * * * root /net/nas01/Public/status/lvs1/status_stamp.sh
+

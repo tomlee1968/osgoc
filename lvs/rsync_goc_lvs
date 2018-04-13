@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# rsync_goc_lvs -- synchronize the LVS config file to/from the backup server
+# Tom Lee <thomlee@iu.edu>
+# Begun 2015-02-18
+# Last modified 2015-02-19
+
+# An easy one-script solution to having to parallel-edit the same file in
+# multiple places.
+
+# Assumption: Only one person is editing the file on one machine at one time.
+# We can demand that the file only be edited on lvs-itb1, not 2/3/4/etc.  Also,
+# no script is a substitute for communication.  You cannot just go editing the
+# LVS config files without telling anyone.
+
+# Procedure in a nutshell: If the config file here is newer than the one on the
+# backup server, copy ours to the backup.  If the backup server's version is
+# newer, copy that one here.  If that last thing happened, refresh LVS so it's
+# using the new config file.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/opt/sbin:/opt/bin
+
+###############################################################################
+# Settings
+###############################################################################
+
+# The destination server
+DESTSVR=backup.goc
+
+# The username on the destination server
+DESTUSER=goc
+
+# The directory to use on the backup server
+DESTDIR=/usr/local/backup/lvs/lvs1.grid.iu.edu
+
+# The SSH command to use
+SSHCMD="ssh -i /root/.ssh/id_goc.dsa"
+
+# The config file to rsync
+CFGFILE=goc_lvs.conf
+
+# The local config directory, where $CFGFILE resides
+CFGDIR=/usr/local/lvs/etc
+
+# The local temp directory
+TEMPDIR=/usr/local/lvs/tmp
+
+# The command to run if $CFGFILE has changed
+REFRESH_CMD=/usr/local/lvs/bin/goc_lvs.pl
+
+###############################################################################
+
+# rsync options crib sheet:
+# -a = -rptlgoD (mnemonic "reptile god")
+# -r = recursive, recurse into directories
+# -p = preserve permissions
+# -t = preserve timestamps
+# -l = preserve symlinks
+# -g = preserve group
+# -o = preserve owner
+# -D = preserve devices and special files
+
+# Some other handy rsync options (that are not part of -a):
+# -A = preserve ACLs (includes -p)
+# -b = make backups
+# -C = ignore files like CVS (*.bak, *~, *.exe, *.o, etc.)
+# -S = handle sparse files
+# -u = update, don't overwrite destination if destination is newer
+# -X = preserve extended file attributes
+# -x = stay on one filesystem
+# -z = compress data during transfer
+# -e <cmd> = remote shell command to use
+
+###############################################################################
+# Main script
+###############################################################################
+
+# If the local file is newer than the backup, send it to the backup server.
+rsync -AbauX -e "$SSHCMD" $CFGDIR/$CFGFILE $DESTUSER@$DESTSVR:$DESTDIR/
+
+# Make sure $TEMPDIR exists.
+mkdir -p $TEMPDIR
+
+# If the file on the backup server is newer than the local file, get it.
+rsync -AbauX -e "$SSHCMD" $DESTUSER@$DESTSVR:$DESTDIR/$CFGFILE $TEMPDIR/
+
+# If $TEMPDIR/$CFGFILE is now newer than $CFGDIR/$CFGFILE, both move it into
+# place and issue $REFRESH_CMD.
+if [[ $TEMPDIR/$CFGFILE -nt $CFGDIR/$CFGFILE ]]; then
+    cp -b --preserve=all $TEMPDIR/$CFGFILE $CFGDIR/$CFGFILE
+    $REFRESH_CMD
+    # Log it.  (Default -p is user.notice, which is fine.)
+    logger -t rsync_goc_lvs Refreshing LVS after new $CFGFILE synchronized
+fi
