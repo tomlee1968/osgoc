@@ -1,0 +1,5 @@
+# Run the crlsync_check script, which is this VM's raison d'etre
+
+MAILTO=thomlee@iu.edu
+
+27 */6 * * * crlsync /opt/sbin/crlsync_check.sh
