@@ -1,0 +1,580 @@
+#!/usr/bin/perl -w
+
+# signhostkey -- sign the host's public SSH key, outputting the resulting
+# certificate to stdout
+
+# Tom Lee, Indiana University <thomlee@iu.edu>
+# Begun 2014-05-07 (based on bash script begun 2013-03-18)
+# Last modified 2014-10-01
+
+# How we get host keys signed:
+
+# 1. Write an SSH public host key to $KEY_SPOOL, for example to a file called
+# 'id.pub'.
+
+# 2. Write ssh-keygen options to $KEY_SPOOL/id.pub.opts as follows:
+
+# -h -I 'hostname' -n hostname1,hostname2,ip1,ip2,...
+
+# 3. Using 'touch' or something similar, write a zero-length file called
+# $KEY_SPOOL/id.pub.written to signal that we're done writing data.
+
+# 4. Wait for a file called $KEY_SPOOL/id.pub.done to appear.  That's casignd
+# signaling that it's done.  Unless an error of unforeseen proportions occurs,
+# the .done file will get written no matter what, but have a timeout in any
+# case.
+
+# 5. Find the certificate in $KEY_SPOOL/id-cert.pub.  If the certificate file
+# didn't get written, there was an error of some kind; check /var/log/messages.
+
+# 6. Print the certificate file's contents to standard output and delete the
+# key and the .opts, .written, and .done files (.done file last).  Delete the
+# .opts and .written files even if there was a timeout, so casignd doesn't keep
+# trying to sign the certificate and getting the same error over and over.
+
+# This script is meant to be called via ssh to goc@cert.grid.iu.edu from the
+# machine whose host key we want to have signed.  Suppose we've just created
+# foo.grid.iu.edu; its install script should run a command similar to
+
+# cat /etc/ssh/ssh_host_rsa_key.pub | ssh -i /root/.ssh/id_goc.dsa goc@cert.grid.iu.edu /opt/sbin/signhostkey > /etc/ssh/ssh_host_rsa_key-cert.pub
+
+# (with either the appropriate absolute path prepended to ssh, or with the PATH
+# variable set securely, of course)
+
+# This will allow this script to get the host's IP address from the
+# $SSH_CONNECTION variable.
+
+use strict;
+use File::Copy;
+use File::Temp;
+use Getopt::Std;
+use IO::File;
+use Net::DNS;
+use Net::IP;
+use Net::LDAP;
+use NetAddr::IP;
+use Time::HiRes qw(gettimeofday usleep);
+
+###############################################################################
+# Settings
+###############################################################################
+
+# Path
+$ENV{PATH} = '/sbin:/bin:/usr/sbin:/usr/bin:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin';
+
+# Version
+my $VERSION = '2.1';
+
+# Key spool directory for casignd
+my $KEY_SPOOL = '/opt/var/spool/casignd';
+
+# How long (in microseconds) to sleep between checks while we're waiting for
+# casignd to sign the certificate
+my $USLEEP = 250000;
+
+# Timeout (in seconds) after submitting a certificate to casignd before
+# deciding that there's been some kind of error.  Usually, if something's wrong
+# with the key, casignd will write $KEY.done without writing the certificate
+# and log an error message to syslog, so this timeout won't happen unless
+# things go seriously pear-shaped.
+my $TIMEOUT = 10;
+
+# Information about network(s)
+my %NET =
+  (
+   # Indexed by VLAN number
+   '259' =>
+   {
+    # Domains
+    domains =>
+    [
+     'grid.iu.edu',
+     'uits.indiana.edu',
+     'opensciencegrid.org',
+    ],
+    # Subnets
+    subnet_v4 => '129.79.53.0/24',
+    subnet_v6 => '2001:18e8:2:6::/64',
+   },
+   '4020' =>
+   {
+    domains =>
+    [
+     'goc',
+    ],
+    subnet_v4 => '192.168.96.0/22',
+    subnet_v6 => 'fd2f:6feb:37::/48',
+    # DHCP -- only on VLAN 4020
+    dhcp_v4 => '192.168.96.128/25',
+    dhcp_v6 => 'fd2f:6feb:37:3::/64',
+   },
+  );
+
+# Which VLAN is external, which internal?
+my $VLAN_EXT = 259;
+my $VLAN_INT = 4020;
+
+# Mapping IP version to DNS record type for looping
+my %DNS_ADDR_TYPE =
+  (
+   '4' => 'A',
+   '6' => 'AAAA',
+  );
+
+# LDAP servers to search.
+my @LDAP_SERVERS = ('ds-bl-01.goc', 'ds-bl-02.goc');
+
+# Base DN for LDAP queries.
+my $LDAP_BASE = 'dc=goc';
+
+# Catalog of global variables that are set during the course of the script:
+
+# %OPT: Command-line options
+my %OPT = ();
+# @INT_IPS: Array of internal IP addresses (IPv4 and/or IPv6)
+my @INT_IPS = ();
+# $INT_MAINHOST: Main internal hostname (e.g. "monitor.goc")
+my $INT_MAINHOST = undef;
+# @INT_OTHERHOSTS: Array of other internal hostnames/aliases
+my @INT_OTHERHOSTS = ();
+# @EXT_IPS: Array of external IP addresses (IPv4 and/or IPv6)
+my @EXT_IPS = ();
+# $EXT_MAINHOST: Main external hostname (e.g. "riley.uits.indiana.edu")
+my $EXT_MAINHOST = undef;
+# @EXT_OTHERHOSTS: Array of other external hostnames/aliases
+# (e.g. "is2.grid.iu.edu")
+my @EXT_OTHERHOSTS = ();
+# @SHORTS: Array of short hostnames (e.g. "bundy")
+my @SHORTS = ();
+# $KEY: Path to file containing public SSH key to sign
+my $KEY = undef;
+# $CERT: Path to file containing certificate ($KEY after being signed)
+my $CERT = undef;
+# $TMPKEY: Handle of temporary file used to copy key into from stdin
+my $TMPKEY = undef;
+# $FP: Fingerprint of public key
+my $FP = undef;
+
+###############################################################################
+# Functions
+###############################################################################
+
+sub HELP_MESSAGE {
+  print <<"EOF"
+Usage: cat /path/to/id.pub | $0 [-i <IP>] > /path/to/id-cert.pub
+EOF
+  ;
+}
+
+sub VERSION_MESSAGE {
+  print "$0 version $VERSION\n";
+}
+
+sub uniq {
+  # Given an array ref, return a ref to an array that has the same elements,
+  # but none of them repeated
+  my($aref) = @_;
+  my @new = ();
+  my %seen = ();
+  foreach my $element (@$aref) {
+    push(@new, $element) unless($seen{$element}++);
+  }
+  return \@new;
+}
+
+sub get_ip_from_ssh_connection {
+  # The $SSH_CONNECTION environment variable should contain the source IP
+  # address of the connection in its first field.
+  my($ip, undef) = split(/\s+/, $ENV{SSH_CONNECTION});
+  return $ip;
+}
+
+sub dns_query {
+  # Does a DNS query and returns the results.  As with the Net::DNS module, if
+  # $type is left out, "A" is assumed, and if $class is left out, "IN" is
+  # assumed.  This can really only handle types "A", "AAAA", and "PTR", which
+  # is all this script is going to ask it to search for anyway.  Returns undef
+  # if not found.
+  my($query, $type, $class) = @_;
+  return undef unless(($type eq 'A') || ($type eq 'AAAA') || ($type eq 'PTR')
+		      || !defined($type));
+  unless(defined($type)) {
+    $type = 'A';
+  }
+  # DNS resolver object for later use.
+  my $res = Net::DNS::Resolver->new;
+  my $packet = $res->search($query, $type, $class);
+  my @results = ();
+  if($packet) {
+    foreach my $rr ($packet->answer) {
+      next unless($rr->type eq $type);
+      if(($type eq 'A') || ($type eq 'AAAA')) {
+	my $ip = Net::IP->new($rr->address);
+	push(@results, $ip->short);
+      } elsif($type eq 'PTR') {
+	push(@results, $rr->ptrdname);
+      }
+    }
+  }
+  foreach my $result (@results) {
+    $result =~ s/\.$//;
+  }
+  if($#results < 0) {
+      warn "Query (type $type) for $query returned no results.\n";
+  }
+  return [ @results ];
+}
+
+sub ldap_query {
+  # Does an LDAP query and returns the results.
+  my($filter, $attrs) = @_;
+  unless(defined($filter)) {
+    $filter = '*';
+  }
+  my @attrs = ();
+  if(defined($attrs)) {
+    @attrs = split(/\s+/, $attrs);
+  } else {
+    $attrs = ('*');
+  }
+  my $ldap = Net::LDAP->new(\@LDAP_SERVERS) || return undef;
+  my $mesg = $ldap->bind;
+  $mesg = $ldap->search(
+			base => $LDAP_BASE,
+			filter => $filter,
+			attrs => \@attrs,
+		       );
+  return undef if($mesg->code);
+  return $mesg->as_struct;
+}
+
+sub lookup_short_ext {
+  # Using the domains in $NET{$VLAN_EXT}->{domains}, look up a "short hostname"
+  # (shouldn't contain any .s) and make sure the result's IP is sensible (if
+  # somebody starts up an is2.uits.indiana.edu or tx-itb.uits.iupui.edu, this
+  # should filter it out).  Returns as main an external hostname as possible.
+  my($short) = @_;
+  my $ext_h = $NET{$VLAN_EXT};
+  my @results = ();
+  foreach my $domain (@{$ext_h->{domains}}) {
+    # See if $short.$domain is in DNS, and make sure the resulting IP(s)
+    # returned is/are actually in our public VLAN.
+    my @ips = ();
+    foreach my $v (sort(keys(%DNS_ADDR_TYPE))) {
+      next unless($ext_h->{"subnet_obj_v$v"});
+      # May seem confusing, but what this means is: Look up "$short.$domain" in
+      # DNS, using A or AAAA as appropriate, and add any results we get back
+      # that are in the appropriate subnet to @ips.
+      push(@ips, grep {
+	NetAddr::IP->new($_)->within($ext_h->{"subnet_obj_v$v"});
+      } @{&dns_query("$short.$domain", $DNS_ADDR_TYPE{$v})});
+    }
+    next unless(@ips);
+    # We are only here if "$short.$domain" was found in DNS with an IP that is
+    # in the appropriate subnet.
+    push(@results, "$short.$domain");
+  }
+  if($#results >= 0) {
+    return [ @results ];
+  } else {
+    return [];
+  }
+}
+
+sub ldap_search_otherhosts {
+  # Using an LDAP search, find the hostnames associated with the given internal
+  # IP address in the LDAP database.  Returns an arrayref or undef.
+  my($ip) = @_;
+  return undef unless($ip);
+  my $href = &ldap_query("(&(objectClass=ipHost)(ipHostNumber=$ip))", 'cn');
+  return undef unless defined $href;
+  my %res = %$href;
+  my @cns = ();
+  foreach my $key (keys %res) {
+    if(ref($res{$key}->{cn}) eq 'ARRAY') {
+      push @cns, @{$res{$key}->{cn}};
+    } else {
+      push @cns, $res{$key}->{cn};
+    }
+  }
+#  system(sprintf('logger -p user.notice -t signhostkey "%s"', join(', ', @cns)));
+  return [ @cns ];
+}
+
+sub lookup_int_otherhosts {
+  # Assume $INT_MAINHOST and @INT_IPS are already set.  Look up @INT_IPS in
+  # LDAP via 'ldap_search_otherhosts' (above) and populate @INT_OTHERHOSTS with
+  # any aliases we find that don't end in '-l' and aren't in @INT_IPS or equal
+  # to $INT_MAINHOST themselves.
+  foreach my $int_ip (@INT_IPS) {
+    foreach my $alias (@{&ldap_search_otherhosts($int_ip)}) {
+      # Skip the *-l aliases
+      next if($alias =~ /-l$/);
+      # Skip any aliases without a . in them, like 'base' and 'puppet'
+      next unless($alias =~ /\./);
+      # The main hostname will probably be one of the results returned, but we
+      # already have that.
+      next if($alias eq $INT_MAINHOST);
+      # Add $alias to the list
+      push(@INT_OTHERHOSTS, $alias);
+    }
+  }
+}
+
+sub get_ips_and_hostnames {
+  # Sets global variables @SHORTS, @INT_IPS, @EXT_IPS, $INT_MAINHOST,
+  # @INT_OTHERHOSTS, $EXT_MAINHOST, and @EXT_OTHERHOSTS.  It is possible for
+  # both *_OTHERHOSTS variables to be empty, but not any of the others.  Even
+  # @SHORTS will have at least one element.
+
+  # If $OPT{i} is set, use that as the IP address.  Otherwise, get the IP
+  # from $ENV{SSH_CONNECTION}.  But if that IP is DHCP, don't proceed.
+
+  my $conn_ip;
+  if($OPT{i}) {
+    $conn_ip = $OPT{i};
+  } else  {
+    # Get the IP from $ENV{SSH_CONNECTION}.
+    $conn_ip = &get_ip_from_ssh_connection;
+  }
+
+  # Now, that IP could be either an internal or external IP, and could be
+  # either IPv4 or IPv6.  It's easy enough to find out -- if it matches
+  # $NET{$VLAN_INT}->{subnet_obj_v*}, it's internal.
+
+  # If it's internal, set @INT_IPS to its value, look it up in DNS to get
+  # $INT_MAINHOST, and do an LDAP search on it to get any internal aliases --
+  # ignore any ending in '-l', but otherwise put them in @INT_OTHERHOSTS.
+  # Shorten $INT_MAINHOST to get its short hostname, and try adding suffixes
+  # from $CFG:NET{$VLAN_EXT}->{domains} to it to find $EXT_MAINHOST.  Look that
+  # up in DNS to get @EXT_IPs.  Similarly, shorten and search the alternates in
+  # @INT_OTHERHOSTS to find any @EXT_OTHERHOSTS that have the same IP.
+
+  # If $conn_ip is external, set @EXT_IPS to its value, then look it up in DNS
+  # to find $EXT_MAINHOST.  Shorten that and append '.goc' to get
+  # $INT_MAINHOST, then look that up in DNS to find @INT_IPS.  Do an LDAP
+  # search on $INT_MAINHOST to find any aliases; put any that don't end in '-l'
+  # into @INT_OTHERHOSTS.  Then, as above, shorten and search the
+  # @INT_OTHERHOSTS alternates to find any @EXT_OTHERHOSTS with the same IP.
+
+  my $conn_ip_netaddr = NetAddr::IP->new($conn_ip);
+  my $conn_ip_net = Net::IP->new($conn_ip);
+  my $v = $conn_ip_netaddr->version;
+  @SHORTS = ();
+  @INT_OTHERHOSTS = ();
+  @EXT_OTHERHOSTS = ();
+  my $int_h = $NET{$VLAN_INT};
+  my $ext_h = $NET{$VLAN_EXT};
+  if($int_h->{"subnet_obj_v$v"}
+     && $conn_ip_netaddr->within($int_h->{"subnet_obj_v$v"})
+     && !$conn_ip_netaddr->within($int_h->{"dhcp_obj_v$v"})) {
+    # $conn_ip is internal; go from there
+    # Reverse-DNS-lookup the main internal hostname
+    ($INT_MAINHOST) = (@{&dns_query($conn_ip_net->reverse_ip, 'PTR')});
+    if(defined $INT_MAINHOST) {
+	# Forward-DNS-lookup that hostname to get all internal IPs
+	@INT_IPS = (@{&dns_query($INT_MAINHOST, 'A')},
+		    @{&dns_query($INT_MAINHOST, 'AAAA')});
+	# Get the other internal hostnames from LDAP using the IP(s)
+	&lookup_int_otherhosts;
+	# Split off the short hostname
+	my($short) = split(/\./, $INT_MAINHOST, 2);
+	# Save it
+	@SHORTS = ($short);
+	# Look up the main external hostname in DNS using $short
+	($EXT_MAINHOST) = @{&lookup_short_ext($short) || []};
+	# Look up all existing external IPs for that hostname
+	@EXT_IPS = (@{&dns_query($EXT_MAINHOST, 'A')},
+		    @{&dns_query($EXT_MAINHOST, 'AAAA')});
+    }
+  } elsif($ext_h->{"subnet_obj_v$v"}
+	  && $conn_ip_netaddr->within($ext_h->{"subnet_obj_v$v"})) {
+    # $conn_ip is external; go from there
+    # Reverse-DNS-lookup that IP to get the main external hostname
+    ($EXT_MAINHOST) = (@{&dns_query($conn_ip_net->reverse_ip, 'PTR')});
+    # Forward-DNS-lookup that IP to get all external IPs
+    @EXT_IPS = (@{&dns_query($EXT_MAINHOST, 'A')},
+		@{&dns_query($EXT_MAINHOST, 'AAAA')});
+    # Split off the short hostname
+    my($short) = split(/\./, $EXT_MAINHOST, 2);
+    # Save it
+    @SHORTS = ($short);
+    # Set the main internal hostname using $short
+    $INT_MAINHOST = "$short.goc";
+    # Look up that hostname in DNS to get all internal IPs
+    @INT_IPS = (@{&dns_query($INT_MAINHOST, 'A')},
+		@{&dns_query($INT_MAINHOST, 'AAAA')});
+    # Get the other internal hostnames from LDAP using the IP(s)
+    &lookup_int_otherhosts;
+  }
+  # Now populate @EXT_OTHERHOSTS and @SHORTS based on
+  # @INT_OTHERHOSTS
+  foreach my $alias (@INT_OTHERHOSTS) {
+    my($short) = split(/\./, $alias, 2);
+    push(@SHORTS, $short);
+    my($other) = @{&lookup_short_ext($short)};
+    if($other) {
+      push(@EXT_OTHERHOSTS, $other);
+    }
+  }
+}
+
+sub stdin_to_temp {
+  # Just prints standard input to a temp file and returns the filename.
+  $File::Temp::KEEP_ALL = 1;
+  my $temp_fh = File::Temp->new
+  (
+   TEMPLATE => 'signhostkey.XXXXXXXXXX',
+   DIR => '/tmp',
+  );
+
+  while(defined(my $line = <>)) {
+    $temp_fh->print($line);
+  }
+  my $path = $temp_fh->filename;
+  $temp_fh->close;
+  return $path;
+}
+
+sub file_to_stdout {
+  # Just prints the contents of the given file path to stdout.
+  my($path) = @_;
+  my $fh = IO::File->new("<$path");
+  while(defined(my $line = <$fh>)) {
+    print $line;
+  }
+  $fh->close;
+}
+
+sub get_options {
+  # Deal with command-line options.
+  $Getopt::Std::STANDARD_HELP_VERSION = 1;
+  %OPT = ();
+  getopts('di:', \%OPT);
+  if($OPT{i}) {
+      die("$OPT{i} is not an IP address\n") unless(Net::IP->new($OPT{i}));
+  }
+}
+
+sub init {
+  # Initialization tasks.
+  foreach my $vlan (keys(%NET)) {
+    foreach my $v (4, 6) {
+      next unless($NET{$vlan}->{"subnet_v$v"});
+      $NET{$vlan}->{"subnet_obj_v$v"} =
+	NetAddr::IP->new($NET{$vlan}->{"subnet_v$v"});
+      if(exists($NET{$vlan}->{"dhcp_v$v"})) {
+	  $NET{$vlan}->{"dhcp_obj_v$v"} =
+	      NetAddr::IP->new($NET{$vlan}->{"dhcp_v$v"});
+      }
+    }
+  }
+  &get_ips_and_hostnames;
+}
+
+sub cleanup {
+  # Clean up after ourselves -- remove $KEY.written first in a separate action
+  # so there's no possibility of a race condition if casignd somehow runs here
+  # (it will see $KEY.done and move on).
+  unlink("$KEY.written");
+  unlink("$TMPKEY", "$KEY", "$CERT", "$KEY.opts", "$KEY.done");
+}
+
+###############################################################################
+# Main script
+###############################################################################
+
+# If the user can't write to the spool directory, either they're not
+# authorized or things are set up incorrectly.  In any case, there's
+# no point in proceeding.
+if(! -w $KEY_SPOOL) {
+  warn("Can't write to spool directory.  Exiting.\n");
+  exit 1;
+}
+
+# Get options.
+&get_options;
+
+# Set things up.
+&init;
+
+# Make a temporary file in which to store the public key until we can place it
+# in $KEY_SPOOL.  We want to avoid a race condition with casignd, which could
+# happen (though the chance would be very slim) if we were to directly put it
+# into $KEY_SPOOL.  Basically $KEY_SPOOL/$TMPKEY.opts and
+# $KEY_SPOOL/$TMPKEY.written would have to already exist, but
+# $KEY_SPOOL/$TMPKEY.done would have to not exist, and casignd would have to
+# check $KEY_SPOOL during the time when we created $KEY_SPOOL/$TMPKEY and the
+# time when we deleted the .opts and .written files, which would of course be
+# the very next line in the script.  Anyway, we avoid the whole issue
+# completely by starting in /tmp (it's a public key, so it doesn't matter if
+# somebody else observes its content).
+
+# Write the actual key data to $TMPKEY so we can calculate its fingerprint --
+# ssh-keygen is incapable of accepting the actual key data from standard input;
+# it needs a file path.
+$TMPKEY = &stdin_to_temp;
+
+# Get ssh-keygen to calculate the key's fingerprint.
+(undef, $FP) = split(/\s+/, `ssh-keygen -l -f $TMPKEY`, 3);
+$FP =~ s/://g;
+
+# Now assemble the final file path in $KEY_SPOOL.
+$KEY = "$KEY_SPOOL/$FP.pub";
+
+# Figure out in advance what the certificate will be called.  This is how
+# ssh-keygen names the certificate files it creates -- if they end in '.pub',
+# it changes that to '-cert.pub', but if they don't end in '.pub', it appends
+# '-cert.pub' to whatever it does end with.
+$CERT = "$KEY_SPOOL/$FP-cert.pub";
+
+# To make sure there's still no possibility for a race condition with casignd,
+# delete these files in advance, if they somehow exist (the most common way for
+# this to happen would be if the user had submitted the same key to be signed
+# within the past few minutes but is now doing it again for some reason):
+unlink("$KEY.written", "$KEY.done", "$KEY.opts");
+
+# Put the key in place, now that the way has been prepared.  No race condition
+# can happen, because casignd will not act until $KEY.opts and $KEY.written
+# both exist.
+copy($TMPKEY, $KEY);
+
+# Generate $KEY.opts.  We need the hostname/IP data for this.
+my @HOSTLIST = grep { $_ } (@SHORTS, $EXT_MAINHOST, @EXT_OTHERHOSTS,
+	 $INT_MAINHOST, @INT_OTHERHOSTS, @EXT_IPS, @INT_IPS);
+my $fh = IO::File->new(">$KEY.opts");
+$fh->printf("-h -I '%s' -n '%s'\n",
+	    $EXT_MAINHOST || $INT_MAINHOST || '',
+	    join(',', @HOSTLIST));
+$fh->close;
+
+# Now touch $KEY.written to signal casignd that we're ready.
+system("touch $KEY.written");
+
+# Now wait for $KEY.done to exist, which is casignd's signal to us that it's
+# done signing.  If this takes too long, that means there's been some kind of
+# error, so save $STARTTIME so we can always look at the current time and
+# compare the time elapsed since $STARTTIME with $TIMEOUT.
+my $STARTTIME = gettimeofday;
+until(-e "$KEY.done") {
+  usleep($USLEEP);
+  my $DURATION = gettimeofday - $STARTTIME;
+  if($DURATION >= $TIMEOUT) {
+    warn("ERROR: Timeout occurred.\n");
+    &cleanup;
+    exit 1;
+  }
+}
+
+# Output the certificate, if it exists (which it will unless casignd didn't
+# like it for some reason).
+if(-e $CERT) {
+  &file_to_stdout($CERT);
+} else {
+  warn("ERROR: Invalid key (attempt logged).\n");
+  exit 1;
+}
+
+# And clean up.
+&cleanup;
+exit 0;
