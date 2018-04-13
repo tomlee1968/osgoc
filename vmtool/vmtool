@@ -1,0 +1,2387 @@
+#!/bin/bash
+
+# vmtool -- handle many common VM tasks for GOC VMs
+# Tom Lee <thomlee@indiana.edu>
+# Begun 2009/04/17
+# Last modified 2012/04/12
+
+###############################################################################
+# Supported Commands
+###############################################################################
+# This is meant to be called from one of various symlinks:
+#
+# lsvm: List all VMs on system
+# mkvm <vm_name>: Create a new VM
+# rmvm <vm_name>: Delete a VM (the VM cannot be running)
+# mvvm <vm_name> <vm_newname>: Rename a VM (the VM cannot be running)
+# allvm <vmware-cmd command>: Do a command for all VMs
+# rebuild_vmware: Rebuilds VMware Server's modules
+#
+# where VM names can only contain letters, numbers, and the characters ._+-
+
+###############################################################################
+# About the config file
+###############################################################################
+# The /opt/etc/vmtool.conf file sets the following:
+#
+# VM_DIR: The full path to the directory containing all VM volumes' mount
+# points/directories (usually /vm)
+#
+# VM_VG: The volume group containing all VM LVs (or containing the /vm LV)
+#
+# VM_TAG: The LVM tag to give all VM LVs (if they have separate LVs)
+#
+# USR_LOCAL_SIZE: The default size for /usr/local on VMs; this is given as a
+# number and a unit (e.g. "32GiB").  See below for more about units.
+#
+# VM_SOURCE: The path to the source VM, which will be used as a starting point
+# when a new VM is created
+
+###############################################################################
+# GOC standards for VMs:
+###############################################################################
+# Old-style VMware:
+#
+# 1. There must be a LV on VG $VM_VG (see /opt/etc/vmtool.conf) named <vm_name>
+# with tag "vm" (use "--addtag vm" when doing lvcreate)
+#
+# 2. The filesystem label on that LV's filesystem must be $VM_DIR/<vm_name>
+# (use "-L <label>" when doing mkfs)
+#
+# 3. There must be a mount point at $VM_DIR/<vm_name> for the volume
+#
+# 4. There must be a line in /etc/fstab to mount that mounts the volume by
+# label (LABEL=$VM_DIR/<vm_name> $VM_DIR/<vm_name> default 0 0)
+#
+# 5. There must be a $VM_DIR/<vm_name>/<vm_name>.vmx
+#
+# 6. The .vmx file must contain a line: displayname = "<vm_name>"
+#
+# Upon further reflection, I don't really know why we started using a separate
+# LV for each VM.  There's no real reason why we couldn't have an LV for all
+# VMs, giving each VM a directory within that LV.  That would eliminate steps
+# 1-4 above, making things MUCH simpler.  Perhaps we'll move toward this in the
+# future.
+#
+# New-style ("flat") VMware:
+#
+# 1. There must be a mounted volume on $VM_DIR (usually /vm)
+#
+# 2. There must be a $VM_DIR/<vm_name>/<vm_name>.vmx
+#
+# 3. The .vmx file must contain a line: displayname = "<vm_name>"
+#
+# KVM:
+#
+# 1. There must be a $VM_DIR (usually /var/lib/libvirt/images)
+#
+# 2. The VM must be consistent with virsh
+#
+###############################################################################
+# Units
+###############################################################################
+# I've tried to deal with disk and memory sizes consistently within this
+# script, with every input being translated to the internal representation, and
+# with this internal representation translated to what an external program
+# expects.  So here I'm going to document that internal representation.  Within
+# this script we deal with a "data amount" (a DA, which usually refers to a
+# disk size, a file size or the amount of RAM available to a VM), denoted as
+#
+# DA = <integer><unit>
+#
+# with no space between.
+#
+# <integer>: There has so far been no need to use fractional numbers; integers
+# seem to suffice for this script's purposes.
+#
+# <unit>: This script uses all-lowercase IEEE1541 units -- in other words, I'm
+# almost adhering to the IEEE1541 standard, but not quite.  Everything but the
+# case.  The units available are as follows:
+#
+# kb (kilobyte)  =                     1,000 bytes = 10^3 bytes
+# mb (megabyte)  =                 1,000,000 bytes = 10^6 bytes  = 1000 kb
+# gb (gigabyte)  =             1,000,000,000 bytes = 10^9 bytes  = 1000 mb
+# tb (terabyte)  =         1,000,000,000,000 bytes = 10^12 bytes = 1000 gb
+# pb (petabyte)  =     1,000,000,000,000,000 bytes = 10^15 bytes = 1000 tb
+# eb (exabyte)   = 1,000,000,000,000,000,000 bytes = 10^18 bytes = 1000 pb
+# kib (kibibyte) =                     1,024 bytes = 2^10 bytes
+# mib (mebibyte) =                 1,048,576 bytes = 2^20 bytes = 1024 kib
+# gib (gibibyte) =             1,073,741,824 bytes = 2^30 bytes = 1024 mib
+# tib (tebibyte) =         1,099,511,627,776 bytes = 2^40 bytes = 1024 gib
+# pib (pebibyte) =     1,125,899,906,842,624 bytes = 2^50 bytes = 1024 tib
+# eib (exbibyte) = 1,152,921,504,606,846,976 bytes = 2^60 bytes = 1024 pib
+#
+# When dealing with hard drive sizes, manufacturers usually measure in
+# powers-of-10 units -- they will say "500 GB," by which they mean what we're
+# calling "500gb" in this script.  In other words, 500 x 10^9 bytes.  However,
+# when dealing with amounts of memory and sizes of files, manufacturers and
+# programmers tend to measure in powers-of-2 units -- if they say "32 GB" or
+# "32 gigabytes," what they really mean is "32 gibibytes," which we'd call
+# "32gib" in this script -- in other terms, 32 x 2^30 bytes.
+#
+# Again, these are the *internal* units I'm using.  Users can specify the unit
+# they're using in various ways:
+#
+# "LVM units": LVM uses single-letter units and differentiates between
+# powers-of-10 and powers-of-2 units by capitalizing.  For example, "1k" means
+# 1000 bytes to LVM, while "1K" means 1024 bytes.  Because there's no
+# ambiguity, users can specify units in this style to this script, and it will
+# just translate.
+#
+# IEEE1541 units: 1 KB means 1000 bytes, and 1 KiB means 1024 bytes.  The
+# international standard.  Users can specify these as well, and this script
+# will figure it out.
+#
+# "Internal units": The ones listed above -- which are actually just IEEE1541
+# units in all lowercase.  If users give quantities in these units, which is
+# really this script's native language for them, it will work fine.
+#
+# I'm probably overthinking this, but it will mean no inconsistencies in units.
+
+###############################################################################
+# Settings
+###############################################################################
+
+# Set the path
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/opt/sbin:/opt/bin
+
+# This is the approximate size of all the files in the VM other than the
+# /usr/local virtual disk.  If there's a significant change to the VM, change
+# this.  This should be in 'gib'.
+BASE_VM_SIZE='13gib'
+
+# Get the options
+. /opt/etc/vmtool.conf
+#echo "DEBUG: \$USR_LOCAL_SIZE = $USR_LOCAL_SIZE" > /dev/stderr
+
+# How the script was called
+CALLED_AS=`basename $0`
+#echo $CALLED_AS
+
+# Is this a VMWare Server or qemu/kvm system?
+if [ -e /usr/libexec/qemu-kvm ]; then
+    KVM=1
+else
+    KVM=''
+fi
+
+###############################################################################
+# Subroutines
+###############################################################################
+
+function test_cmd {
+    # If $TEST_MODE is true, prints the given command line.  Otherwise, executes it.
+    local cmd="$@"
+    if [ $TEST_MODE ]; then
+	echo "(test mode)" $cmd
+    else
+	eval $cmd
+    fi
+}
+
+function print_mkvm_help() {
+    # Prints a help message for the mkvm variant.
+
+    cat <<EOF > /dev/stderr
+Usage: mkvm [<options>] <name of new VM>
+Options:
+  -h: Print this help message
+  -a: Does nothing; exists for backwards compatibility
+  -c: Set the number of virtual CPUs (1 or 2, default=$NUMVCPUS)
+  -m: Memory size of new VM (default=$MEM_SIZE)
+  -n: Set the new VM to NOT power on when VMware starts (default=autostart)
+  -s <size>: Size of /usr/local on new VM (default=$USR_LOCAL_SIZE)
+  -t: Tests the process by showing what would be done, but doesn't do it
+  Size specification: <number>[<unit>]
+  Units: k = kb = KB = 1000    K = kib = KiB = 1024
+         m = mb = MB = 1e6     M = mib = MiB = 1024^2
+         g = gb = GB = 1e9     G = gib = GiB = 1024^3
+         t = tb = TB = 1e12    T = tib = TiB = 1024^4
+         etc. (default = MiB)
+EOF
+}
+
+function get_mkvm_options() {
+    # Deal with command-line options for the mkvm variant.
+
+    local opt
+
+    while getopts "ac:hm:ns:t" opt; do
+#	echo "DEBUG: \$opt = $opt; \$OPTARG = $OPTARG" > /dev/stderr
+	case "$opt" in
+	    h)
+		print_mkvm_help
+		exit 0
+		;;
+	    a)
+		echo "Note: The -a option is now the default and is deprecated." > /dev/stderr
+		;;
+	    c)
+		if [ !$KVM ]; then
+		    if [ "$OPTARG" != "1" ] && [ "$OPTARG" != "2" ]; then
+			echo "Valid values for the -c option are 1 and 2." > /dev/stderr
+			exit 1
+		    fi
+		fi
+		NUMVCPUS=$OPTARG
+		;;
+	    m)
+		MEM_SIZE=$OPTARG
+		;;
+	    n)
+		NOAUTOSTART=1
+		;;
+	    s)
+#		echo "DEBUG: -s option; argument = $OPTARG" > /dev/stderr
+		USR_LOCAL_SIZE=$OPTARG
+		;;
+	    t)
+		TEST_MODE=1
+		;;
+	    ?)
+		echo "Error: Required parameter missing" > /dev/stderr
+		print_mkvm_help
+		exit 1
+		;;
+	    *)
+		;;
+	esac
+    done
+}
+
+function print_mvvm_help() {
+    # Prints a help message for the mvvm variant.
+
+    cat <<EOF > /dev/stderr
+Usage: mvvm <VM's old name> <VM's new name>
+Options:
+  -h: Print this help message
+EOF
+}
+
+function get_mvvm_options() {
+    # Deal with command-line options for the mvvm variant.
+
+    local opt
+
+    while getopts "h" opt; do
+	case "$opt" in
+	    h)
+		print_mvvm_help
+		exit 0
+		;;
+	    *)
+		;;
+	esac
+    done
+}
+
+function print_rmvm_help() {
+    # Prints a help message for the rmvm variant.
+
+    cat <<EOF > /dev/stderr
+Usage: rmvm <name of VM to delete>
+Options:
+  -h: Print this help message
+EOF
+}
+
+function get_rmvm_options() {
+    # Deal with command-line options for the rmvm variant.
+
+    local opt
+
+    while getopts "h" opt; do
+	case "$opt" in
+	    h)
+		print_rmvm_help
+		exit 0
+		;;
+	    *)
+		;;
+	esac
+    done
+}
+
+function print_lsvm_help() {
+    # Prints a help message for the lsvm variant.
+
+    cat <<EOF > /dev/stderr
+Usage: lsvm
+Options:
+  -h: Print this help message
+  -c: Print output in HTML format with CSS styles (for vmlist)
+EOF
+}
+
+function get_lsvm_options() {
+    # Deal with command-line options for the lsvm variant.
+
+    local opt
+
+    while getopts "ch" opt; do
+	case "$opt" in
+	    c)
+		LSVM_CSS=1
+		;;
+	    h)
+		print_lsvm_help
+		exit 0
+		;;
+	    *)
+		;;
+	esac
+    done
+}
+
+function print_rebuild_stemcell_help() {
+    # Prints a help message for the rebuild_stemcell variant.
+
+    cat <<EOF > /dev/stderr
+Usage: rebuild_stemcell [<options>]
+Options:
+  -h: Print this help message
+  -c: Set the number of virtual CPUs (1 or 2, default=$NUMVCPUS)
+  -m: Memory size of new VM (default=$MEM_SIZE)
+  -n: Set the new VM to NOT power on when VMware starts (default=autostart)
+  -s <size>: Size of /usr/local on new VM (default=$USR_LOCAL_SIZE)
+  -t: Tests the process by showing what would be done, but doesn't do it
+  Size specification: <number>[<unit>]
+  Units: k = kb = KB = 1000    K = kib = KiB = 1024
+         m = mb = MB = 1e6     M = mib = MiB = 1024^2
+         g = gb = GB = 1e9     G = gib = GiB = 1024^3
+         t = tb = TB = 1e12    T = tib = TiB = 1024^4
+         etc. (default = MiB)
+EOF
+}
+
+function get_rebuild_stemcell_options() {
+    # Deal with command-line options for the rebuild_stemcell variant.
+
+    local opt
+
+    while getopts "ac:hm:ns:t" opt; do
+#	echo "DEBUG: \$opt = $opt; \$OPTARG = $OPTARG" > /dev/stderr
+	case "$opt" in
+	    h)
+		print_rebuild_stemcell_help
+		exit 0
+		;;
+	    a)
+		echo "Note: The -a option is now the default and is deprecated." > /dev/stderr
+		;;
+	    c)
+		if [ !$KVM ]; then
+		    if [ "$OPTARG" != "1" ] && [ "$OPTARG" != "2" ]; then
+			echo "Valid values for the -c option are 1 and 2." > /dev/stderr
+			exit 1
+		    fi
+		fi
+		NUMVCPUS=$OPTARG
+		;;
+	    m)
+		MEM_SIZE=$OPTARG
+		;;
+	    n)
+		NOAUTOSTART=1
+		;;
+	    s)
+#		echo "DEBUG: -s option; argument = $OPTARG" > /dev/stderr
+		USR_LOCAL_SIZE=$OPTARG
+		;;
+	    t)
+		TEST_MODE=1
+		;;
+	    ?)
+		echo "Error: Required parameter missing" > /dev/stderr
+		print_rebuild_stemcell_help
+		exit 1
+		;;
+	    *)
+		;;
+	esac
+    done
+}
+
+function vm_host_type() {
+    # Prints a VM host type:
+    # * 'vmw' for VMWare with individual LVs for each VM
+    # * 'vmf' for VMWare with a flat LV for all VMs
+    # * 'kvm' for KVM
+
+    # If $KVM is 1, it's kvm -- this test was performed earlier
+    if [ "$KVM" == "1" ]; then
+	echo 'kvm'
+	return
+    fi
+
+    # At this point it must be VMWare, but which configuration?
+
+    # If $VM_DIR is a volume of its own, then it's vmf
+    if mount | grep -Fq "on $VM_DIR type"; then
+	echo 'vmf'
+	return
+    fi
+    echo 'vmw'
+}
+
+function vm_lvs_tag() {
+    # Prints the logical volume names of all LVs with the "vm" tag
+
+    lvs --noheadings --separator : -o lv_name,lv_tags | grep :vm$ | sed -e 's/^ *//' | cut -d : -f 1 | sort
+}
+
+function vol_space_left() {
+    # Prints the amount of space left on the given volume, in bytes
+    local vol=$1
+
+    if [ -z "$vol" ]; then
+	echo 0
+	return
+    fi
+    df -B 1 $vol | tail -n 1 | sed -re 's/^([^[:space:]]+[[:space:]]+){3}([[:digit:]]+)[[:space:]]+.*$/\2/'
+}
+
+function test_vol_space() {
+    # Given a number of bytes, see if there is at least that much space left on
+    # volume $VM_DIR.  Return 1 if so, 0 if not.
+
+    local room=`vol_space_left $VM_DIR` need=$1
+    if [ $room -ge $need ]; then
+	return 1
+    else
+	return 0
+    fi
+}
+
+function vg_space_left() {
+    # Prints the amount of space remaining on $VM_VG, in bytes
+
+    local vginfo=`vgdisplay -c $VM_VG`
+    # Size of a physical extent, in KB:
+    local pe_size=`echo $vginfo | cut -d : -f 13`
+    # Number of free physical extents:
+    local pe_free=`echo $vginfo | cut -d : -f 16`
+
+    echo $(( $pe_free * $pe_size * 1024 ))
+}
+
+function test_vg_space() {
+    # Given a number of bytes, see if there is at least that much space
+    # left on volume group $VM_VG.  Return 1 if so, 0 if not.
+
+    local room=`vg_space_left` need=$1
+
+#    echo "debug: space left = $room" > /dev/stderr
+#    echo "debug: space needed = $need" > /dev/stderr
+    if [ $room -ge $need ]; then
+	return 1
+    else
+	return 0
+    fi
+}
+
+function test_vm_name() {
+    # Tests the proposed VM name to make sure it's legal for LVM.  LVM doesn't
+    # allow VG or LV names with any characters other than letters numbers, and
+    # _.+-.  Returns 1 if all is well, 0 otherwise.
+
+    local name=$1
+
+    name=`echo $name | sed -e 's/[-a-z0-9_.+]//g'`
+#    echo "debug: name = '$name'" > /dev/stderr
+    if [ "$name" == "" ]; then
+	return 1
+    else
+	return 0
+    fi
+}
+
+function kill_terminal_zeroes() {
+    # Get rid of zeroes at the end of a number --
+    # in other words, turn 10.00 into 10, 10.20 into 10.2,
+    # and 10. into 10
+
+    local number=$1
+
+    echo $number | sed -e 's/\(\.[1-9]*\)0\+$/\1/' | sed -e 's/\.$//'
+}
+
+function da_kill_zeroes() {
+    # Get rid of the zeroes at the end of a da's quantity
+
+    local da=$1
+    local number=`echo "$da" | grep -Eo '^[[:digit:]\.]+'`
+    local unit=`echo "$da" | grep -Eo '[[:alpha:]]+$'`
+
+    echo `kill_terminal_zeroes $number`$unit
+}
+
+function dc_wrap() {
+    # Prepends a precision specifier and sends the given expression to dc.
+
+    echo "18 k $1" | dc
+}
+
+function dc_add() {
+    # Add two numbers using dc.
+
+    dc_wrap "$1 $2 + p"
+}
+
+function dc_sub() {
+    # Subtract two numbers using dc.
+
+    dc_wrap "$1 $2 - p"
+}
+
+function dc_mult() {
+    # Multiply two numbers using dc.
+
+    dc_wrap "$1 $2 * p"
+}
+
+function dc_div() {
+    # Divide two numbers using dc.
+
+    kill_terminal_zeroes `dc_wrap "$1 $2 / p"`
+}
+
+function dc_round() {
+    # Uses dc to round a decimal to the nearest integer.  Technically, after
+    # setting the precision to the value set in dc_wrap, this adds .5 to the
+    # number, sets the precision to 0, divides by 1 (in dc, this applies the
+    # current precision to the number on the stack), and prints the result.
+
+    # Not that there's any reason to use negative integers in this script, but
+    # this won't work on negative integers -- for one thing, negative integers
+    # are input differently from normal in dc ("_5" is negative 5), and even if
+    # that weren't the case, this algorithm would round in the wrong direction.
+
+    dc_wrap "$1 .5 + 0 k 1 / p"
+}
+
+function dc_round_down() {
+    # Drops the fraction of any number.
+
+    echo "$1 1 / p" | dc
+}
+
+function dc_round_up() {
+    # Uses dc to round a decimal up to the next higher integer.
+
+    local num=`kill_terminal_zeroes $1`
+    local num_down=`dc_round_down $num`
+
+    if [ "$num" == "$num_down" ]; then
+	echo $num
+    else
+	echo $(( num_down + 1 ))
+    fi
+}
+
+function lvm_to_da() {
+    # If necessary, converts the argument from LVM units into our internal
+    # system for stating data amounts.  It's pretty easy to tell when it's in
+    # LVM units -- the unit is just one character, while the internal system
+    # we're using uses either two or three characters for its units.  This
+    # function removes all spaces from the argument (thus showing mercy if
+    # there's a space between the number and the unit), changes the unit
+    # abbreviation if necessary, and puts everything into lowercase for easier
+    # matching later.
+
+    local da=$1
+    da=`echo "$da" | sed -e 's/ //g'`
+    local number=`echo "$da" | grep -Eo '^[[:digit:]\.]+'`
+    local unit=`echo "$da" | grep -Eo '[[:alpha:]]+$'`
+
+    # Default is MiB
+    if [ -z $unit ]; then unit=mib; fi
+
+    # Translate from LVM units
+    if [ ${#unit} -eq 1 ]; then
+	if [ $unit == "E" ]; then unit=eib
+	elif [ $unit == "P" ]; then unit=pib
+	elif [ $unit == "T" ]; then unit=tib
+	elif [ $unit == "G" ]; then unit=gib
+	elif [ $unit == "M" ]; then unit=mib
+	elif [ $unit == "K" ]; then unit=kib
+	elif [ $unit == "e" ]; then unit=eb
+	elif [ $unit == "p" ]; then unit=pb
+	elif [ $unit == "t" ]; then unit=tb
+	elif [ $unit == "g" ]; then unit=gb
+	elif [ $unit == "m" ]; then unit=mb
+	elif [ $unit == "k" ]; then unit=kb
+	else unit=mib
+	fi
+    fi
+
+    # We keep the unit in lowercase internally
+    unit=`echo $unit | tr [:upper:] [:lower:]`
+
+    # Test the unit for intelligibility.
+
+    # Does it end with something other than a 'b'?
+    if [ ${unit:${#unit}-1:1} != "b" ]; then
+	echo "Unable to understand data amount '$da'." > /dev/stderr
+	exit 1
+    fi
+    # Is it more than 3 or fewer than 2 characters long?
+    if [ ${#unit} -gt 3 ] || [ ${#unit} -lt 2 ]; then
+	echo "Unable to understand data amount '$da'." > /dev/stderr
+	exit 1
+    fi
+    # Does it start with something other than one of the unit prefixes?
+    if ! echo ${unit:0:1} | grep -q '[eptgmk]'; then
+	echo "Unable to understand data amount '$da'." > /dev/stderr
+	exit 1
+    fi
+
+    echo "$number$unit"
+#    echo "debug: \$USR_LOCAL_SIZE = $USR_LOCAL_SIZE" > /dev/stderr
+}
+
+function lvm_unit() {
+    # Turns an SI/IEEE1541 unit into an LVM unit.  For example, "MB" should
+    # become "m", while "MiB" should become M.  LVM uses its own crazy unit
+    # abbrevs.
+
+    local si_unit=$1
+    local lc_si_unit=`echo $si_unit | tr [:upper:] [:lower:]`
+    local lvm_unit=${lc_si_unit:0:1}
+
+    # If it's 3 characters, it must be an IEEE1541 unit and should just be the
+    # first letter of that unit, capitalized.  But it's already the first
+    # letter of the unit, so we just have to capitalize it.
+    if [ ${#si_unit} -eq 3 ]; then
+	lvm_unit=`echo $lvm_unit | tr [:lower:] [:upper:]`
+
+    # If it's just 2 characters, then it's an SI unit and should just be the
+    # first letter of that unit, uncapitalized, and it already is, so nothing
+    # more needs to be done.  If it's any other length, then something really
+    # weird is in there, so just use M.
+    elif [ ${#si_unit} -ne 2 ]; then
+	lvm_unit=M
+    fi
+    echo $lvm_unit
+}
+
+function da_to_lvm() {
+    # Converts $1's unit to LVM unit names (e.g. "32mb" becomes "32m", and
+    # "32mib" becomes "32M")
+
+    local da=$1
+    local number=`echo $da | grep -Eo '^[[:digit:]\.]+'`
+    local unit=`echo $da | grep -Eo '[[:alpha:]]+$'`
+    local lunit=`lvm_unit $unit`
+
+    echo "$number$lunit"
+}
+
+function unit_mult() {
+    # Takes an internal unit (e.g. "gib", "mb", etc.) and returns the
+    # multiplier value of that unit (e.g. "unit_mult kb" would return 1000).
+
+    local unit=$1 m=1
+
+    if [ "$unit" == "eib" ]; then m=1152921504606846976
+    elif [ "$unit" == "pib" ]; then m=1125899906842624
+    elif [ "$unit" == "tib" ]; then m=1099511627776
+    elif [ "$unit" == "gib" ]; then m=1073741824
+    elif [ "$unit" == "mib" ]; then m=1048576
+    elif [ "$unit" == "kib" ]; then m=1024
+    elif [ "$unit" == "eb" ]; then m=1000000000000000000
+    elif [ "$unit" == "pb" ]; then m=1000000000000000
+    elif [ "$unit" == "tb" ]; then m=1000000000000
+    elif [ "$unit" == "gb" ]; then m=1000000000
+    elif [ "$unit" == "mb" ]; then m=1000000
+    elif [ "$unit" == "kb" ]; then m=1000
+    else m=1048576
+    fi
+    echo $m
+}
+
+function da_to_bytes() {
+    # Turns its argument, which should be a data amount in the proper internal
+    # format (e.g. "32gib") into bytes.
+
+    local da=$1
+    local number=`echo "$da" | grep -Eo '^[[:digit:]\.]+'`
+    local unit=`echo "$da" | grep -Eo '[[:alpha:]]+$'`
+
+    dc_mult $number `unit_mult "$unit"`
+}
+
+function da_to_mib() {
+    # Turns its argument, which should be a data amount in the proper internal
+    # format (e.g. "32gib") into MiB.  Rounds up to the nearest MiB.
+
+    local da=$1
+    local bytes=`da_to_bytes $da`
+    local mib=`dc_div $bytes 1048576`
+    mib=`dc_round_up $mib`
+    dc_round $mib
+}
+
+function da_to_gib() {
+    # Turns its argument, which should be a data amount in the proper internal
+    # format (e.g. "32tib") into GiB.  Rounds up to the nearest GiB.
+
+    local da=$1
+    local bytes=`da_to_bytes $da`
+    local gib=`dc_div $bytes 1073741824`
+    gib=`dc_round_up $gib`
+    dc_round $gib
+}
+
+function da_to_sectors() {
+    # Turns its argument, which should be a data amount in the proper internal
+    # format (e.g. "32gib") into VMware format, which has to be in sectors
+    # (512 bytes), Kb, Mb, or Gb.  Yes, those are the only units it supports.
+    # VMware's virtual disks cannot be less than 100 Mb or more than 950 Gb.  I
+    # am assuming that VMware's disks use powers-of-10 units.  For optimal
+    # accuracy I'm just converting everything into sectors.
+
+    local da=$1
+    local bytes=`da_to_bytes $da`
+    local sectors=`dc_div $bytes 512`
+    sectors=`dc_round_up $sectors`
+    dc_round $sectors
+}
+
+function da_add() {
+    # Takes two data amounts (e.g. "32gib") and adds them, in rudimentary
+    # fashion.  The result will be in whatever unit the first argument is in,
+    # with fractions dropped.  So `da_add "1gib" "1mib"` produces "1gib", while
+    # `da_add "1mib" "1gib"` produces "1025mib".
+
+    local a=$1 b=$2
+    local unita=`echo "$a" | grep -Eo '[[:alpha:]]+$'`
+    local multa=`unit_mult "$unita"`
+    local bytesa=`da_to_bytes $a` bytesb=`da_to_bytes $b`
+    local tbytes=`dc_add "$bytesa" "$bytesb"`
+    echo `dc_div $tbytes $multa`$unita
+}
+
+function da_coef() {
+    # Multiplies a coefficient into a data amount -- the coefficient is just an
+    # integer and should be the first argument, followed by the data amount.
+
+    local coef=$1 da=$2
+    local number=`echo "$da" | grep -Eo '^[[:digit:]\.]+'`
+    local unit=`echo "$da" | grep -Eo '[[:alpha:]]+$'`
+
+    echo `dc_mult $coef $number`$unit
+}
+
+function da_minimal_base10_unit() {
+    # Given a da specifier (e.g. "32gib"), find the minimal powers-of-10 unit
+    # that the quantity of data can be expressed in without being all
+    # fractional.
+
+    local da=$1
+    local da_bytes=`da_to_bytes $da`
+    local unit um newnum
+
+    for unit in eb pb tb gb mb kb; do
+	um=`unit_mult $unit`
+	if [ $um -lt $da_bytes ]; then
+	    break
+	fi
+    done
+    newnum=`dc_div $da_bytes $um`
+    echo `kill_terminal_zeroes $newnum`$unit
+}
+
+function da_minimal_base2_unit() {
+    # Given a da specifier (e.g. "32gib"), find the minimal powers-of-2 unit
+    # that the quantity of data can be expressed in without being all
+    # fractional.
+
+    local da=$1
+    local da_bytes=`da_to_bytes $da`
+    local unit um newnum
+
+    for unit in eib pib tib gib mib kib; do
+	um=`unit_mult $unit`
+	if [ $um -lt $da_bytes ]; then
+	    break
+	fi
+    done
+    newnum=`dc_div $da_bytes $um`
+    echo `kill_terminal_zeroes $newnum`$unit
+}
+
+function get_partition_ext2_labels() {
+    # Prints the ext2/3 filesystem labels of all partitions.
+
+    local i
+
+    for i in `fdisk -l | grep ^/dev | cut -d ' ' -f 1`; do
+	e2label $i
+    done 2>/dev/null
+}
+
+function get_lv_ext2_labels() {
+    # Prints the ext2/3 filesystem labels of all LVM logical volumes.
+
+    local i
+
+    for i in `lvs --noheadings -o vg_name,lv_name | sed -e "s/[[:space:]]\+/\//g"`; do
+	e2label /dev$i
+    done 2>/dev/null
+}
+
+function get_existing_ext2_labels() {
+    # Makes a list of all the ext2 labels that exist on the system, either as partitions or LVs.
+
+    local partlabels=`get_partition_ext2_labels` lvlabels=`get_lv_ext2_labels`
+
+    echo $partlabels $lvlabels
+}
+
+function make_ext2_label() {
+    # Using $1 as a proposed label, see if there are any ext2/3 filesystems
+    # with that label already; if so, vary it with numbers until we find one
+    # that is unique.  Remember that ext2/3 filesystem labels can be a maximum
+    # of 16 characters.  Echo the label we come up with before exiting.
+
+    # There are really 2 potential problems this function is meant to overcome.
+    # First is the prolem where the label is too long (more than 16
+    # characters), and the other is the problem where the label is nonunique
+    # (some other ext2/3 filesystem exists with the same label).
+
+    local plabel=$1 label labels=`get_existing_ext2_labels` unique=1 number=0
+
+    # If the proposed label is too long, that won't work for us, so first let's
+    # just try using the first 16 characters of the label.
+
+    label=${plabel:0:16}
+
+    # Now let's make sure it's unique.
+
+    for i in $labels; do
+	if [ "x$i" == "x$label" ]; then
+	    unique=''
+	    continue
+	fi
+    done
+    until [ $unique ]; do	# Won't execute if $unique is true
+	(( ++number ))
+	# Try adding $number to the end (after shortening it enough to fit)
+	label="${plabel:0:$((16 - ${#number}))}$number"
+
+	# Now test that for uniqueness
+	unique=1
+	for i in $labels; do
+	    if [ $i == $label ]; then
+		unique=''
+		continue
+	    fi
+	done
+    done
+    echo $label
+}
+
+function vm_running() {
+    # See if the given VM is running.
+
+    # For KVM, this is done by issuing the command "virsh domstate <VM name>",
+    # whose output is one of:
+
+    # shut down
+    # running
+
+    # For VMware, this is done by issuing the command
+    # "vmware-cmd <.vmx file> getstate", whose output is one of:
+
+    # getstate() = on
+    # getstate() = off
+
+    # As is the usual convention for shell commands for some reason, a result
+    # of 0 means the VM is running, and 1 means it is not.
+
+    local name=$1
+    local vmxpath="$VM_DIR/$name/$name.vmx"
+
+    if [ $KVM ]; then
+	local state=`virsh domstate $name`
+	if [ $? -ne 0 ]; then
+	    echo "Error: VM '$name' does not exist" > /dev/stderr
+	    exit 1
+	fi
+	if [ "$state" == "running" ]; then
+	    return 0
+	else
+	    return 1
+	fi
+    else
+	if [ ! -e "$vmxpath" ]; then
+	    echo "Error: File $vmxpath does not exist" > /dev/stderr
+	    exit 1
+	fi
+
+	local state=`/usr/bin/vmware-cmd $vmxpath getstate 2> /dev/null | sed -e 's/^.*=  *//'`
+
+	if [ "$state" == "on" ]; then
+	    return 0
+	else
+	    return 1
+	fi
+    fi
+}
+
+function set_owners_perms() {
+    # Set the ownerships and permissions of the files in a VMware
+    # directory to satisfactory values for our purposes.
+
+    local vmdir=$1
+
+    test_cmd chgrp -R vm $VM_DIR/$VM_NAME
+    test_cmd chmod g+rwxs $VM_DIR/$VM_NAME
+    # This process just overlays each file's user permissions onto its group
+    # permissions -- if the user can read, the group will be able to read, etc.
+    # If for some reason the group can write, for example, but the user cannot,
+    # it doesn't change that.
+    test_cmd find $VM_DIR/$VM_NAME -perm -u+r -exec chmod g+r {} \\;
+    test_cmd find $VM_DIR/$VM_NAME -perm -u+w -exec chmod g+w {} \\;
+    test_cmd find $VM_DIR/$VM_NAME -perm -u+x -exec chmod g+x {} \\;
+}
+
+function register_vm() {
+    # Tell VMware to open this VM and add it to its inventory.
+
+    local vm=$1
+
+    test_cmd vmware-cmd -s register $VM_DIR/$vm/$vm.vmx 2> /dev/null
+}
+
+function unregister_vm() {
+    # Tell VMware to remove this VM from its inventory.
+
+    local vm=$1
+
+    test_cmd vmware-cmd -s unregister $VM_DIR/$vm/$vm.vmx 2> /dev/null
+}
+
+function modify_vmxfile {
+    # Edits a .vmx file, changing parameters to the given values.  Parameters
+    # in .vmx files look like:
+    #
+    # parameter = "value"
+    #
+    # The first parameter to this function should be the path to the .vmx file.
+    # After that, the parameters should be in pairs, with the name and value of
+    # each parameter coming right after the other.  If a parameter exists in
+    # the .vmx file already, its value will of course be replaced with the new
+    # value.  Otherwise, the new parameter will be added to the end.  Note that
+    # there is no way for this function to discriminate between valid and
+    # invalid parameters.  Some useful parameters:
+    #
+    # displayname: the name of the VM; VMware refers to it by this name
+    # autostart: whether the VMware server should start this VM automatically
+    #   ("poweron") or not ("none")
+    # 
+    # memsize: the amount of RAM available to the VM, measured in MiB
+    # numvcpus: the number of virtual CPUs (1 or 2)
+    # machine.id: a string that can be retrieved by vmware_guestd within the guest
+
+    local vmxfile=$1 param value
+    shift
+    test_cmd cp --preserve=all $vmxfile $vmxfile.bak
+    while [ $# -gt 0 ]; do
+	local param=$1 value=$2
+	if grep -Eq '^[[:space:]]*$param[[:space:]]*=' $vmxfile; then
+	    test_cmd sed -i -re 's/^[[:space:\]]*$param[[:space:]]*=.*$/$param = \"$value\"/i' $vmxfile
+	else
+	    test_cmd echo \"$param = \\\"value\\\"\" >> $vmxfile
+	fi
+    done
+}
+
+function set_displayname {
+    # Edit the .vmx file to set the displayname.  This looks like:
+    #
+    # displayname = "vmname"
+    #
+    # in the .vmx file.  Note that unlike the other set_* functions that come
+    # after this one, the arguments are the full path to the VMX file and the
+    # new displayname.
+
+    local vmxfile=$1 newname=$2
+
+    test_cmd mv $vmxfile $vmxfile.bak
+    test_cmd sed -i.bak -e \"s/^ *displayname *= *\\\".*\\\"/displayName = \\\"$newname\\\"/i\" $vmxfile.bak > $vmxfile
+}
+
+function set_autostart {
+    # Edit the .vmx file to tell the new VM what to do when the host powers on
+    # -- technically, when VMware starts up.  This looks like
+    #
+    # autostart = "poweron"
+    #
+    # in the .vmx file.  This is opposed to autostart = "none".  The first
+    # argument should be the VM name, and the second argument should be either
+    # "poweron" or "none".
+
+    local vm=$1 mode=$2
+    local vmxfile=$VM_DIR/$vm/$vm.vmx
+
+    if [ "$mode" != "poweron" ]; then
+	mode=none
+    fi
+    test_cmd mv $vmxfile $vmxfile.bak
+    test_cmd grep -Ev '^[[:space:]]*autostart[[:space:]]*=' $vmxfile.bak > $vmxfile
+    test_cmd echo \"autostart = \\\"$mode\\\"\" >> $vmxfile
+    test_cmd chmod u+rwx $vmxfile
+}
+
+function set_memsize {
+    # Edit the .vmx file to set the memory size.  This looks like:
+    #
+    # memsize = "1024"
+    #
+    # in the .vmx file.  The quantity is measured in MiB.  Send this routine
+    # a data amount just like the disk space measurements.
+
+    local vm=$1 da=$2
+    local vmxfile=$VM_DIR/$vm/$vm.vmx
+    local memsize=`da_to_mib $da`
+
+    test_cmd mv $vmxfile $vmxfile.bak
+    test_cmd grep -Ev '^[[:space:]]*memsize[[:space:]]*=' $vmxfile.bak > $vmxfile
+    test_cmd echo \"memsize = \\\"$memsize\\\"\" >> $vmxfile
+    test_cmd chmod u+rwx $vmxfile
+}
+
+function set_machine_id {
+    # Edit the .vmx file to have a machine.id -- this tells scripts we've
+    # written inside the guest OS which VM host we're on so they can act
+    # accordingly.  Specifically, they set the correct hostname and IP address
+    # at present (IUPUI and IUB networks differ), although other host-specific
+    # behavior may be required in the future.  Basically we set
+    #
+    # machine.id = "grandad"
+    #
+    # if we're on grandad, "huey" if on huey, "ruckus" if on ruckus, etc.  Just
+    # the first component of the hostname.
+
+    local vm=$1
+    local vmxfile=$VM_DIR/$vm/$vm.vmx
+    local shorthost=`hostname | cut -d . -f 1`
+
+    test_cmd mv $vmxfile $vmxfile.bak
+    test_cmd grep -Ev '^[[:space:]]*machine\.id[[:space:]]*=' $vmxfile.bak > $vmxfile
+    test_cmd echo \"machine.id = \\\"$shorthost\\\"\" >> $vmxfile
+    test_cmd chmod u+rwx $vmxfile
+}
+
+function set_numvcpus {
+    # Set the number of virtual CPUs (1 or 2).
+
+    local vm=$1
+    local cpus=$2
+    local vmxfile=$VM_DIR/$vm/$vm.vmx
+
+    test_cmd mv $vmxfile $vmxfile.bak
+    test_cmd grep -Ev '^[[:space:]]*numvcpus[[:space:]]*=' $vmxfile.bak > $vmxfile
+    test_cmd echo \"numvcpus = \\\"$cpus\\\"\" >> $vmxfile
+    test_cmd chmod u+rwx $vmxfile
+}
+
+function vm_name_invalid {
+    # Checks whether a proposed VM name is invalid.  If there is a problem,
+    # returns true (0).  If it's fine, returns false (1).
+    local vm_name="$1"
+    # Test for blank name.
+    if [ -z "$vm_name" ]; then
+	echo "No name was given for the new VM." > /dev/stderr
+	return 0
+    fi
+    if test_vm_name "$vm_name"; then
+	echo "The name '$vm_name' contains illegal characters." > /dev/stderr
+	echo "Only letters, numbers, and _.+- are allowed in VM names." > /dev/stderr
+	return 0
+    fi
+    return 1
+}
+
+function vm_name_exists {
+    # Checks whether a VM already exists under the given name.  If it does,
+    # return true (0).  If not, return false (1).
+    local vm_name="$1"
+    # If it's KVM, see if there's a VM with that name.
+    if [ $KVM ]; then
+	if virsh dominfo $vm_name >& /dev/null; then
+	    echo "A VM named $vm_name already exists." > /dev/stderr
+	    return 0
+	else
+	    return 1
+	fi
+    fi
+    # Flat VMware is easier.  But let's test for some pathological cases
+    # possible with non-flat VMware first.
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	# Look for an LV named $vm_name.
+	if lvdisplay /dev/$VM_VG/$vm_name >& /dev/null; then
+	    echo "A logical volume named $vm_name already exists." > /dev/stderr
+	    return 0
+	fi
+	# Look for a mount point named $vm_name.
+	if [ -e $VM_DIR/$vm_name ]; then
+	    echo "$VM_DIR/$vm_name already exists." > /dev/stderr
+	    return 0
+	fi
+	# Look for an /etc/fstab entry for $vm_name.
+	if grep -Eq ^[^[:space:]]+[[:space:]]+$VM_DIR/$vm_name/?[[:space:]] /etc/fstab; then
+	    echo "There is an entry in /etc/fstab for $VM_DIR/$vm_name." > /dev/stderr
+	    return 0
+	fi
+    fi
+    # Then there are problems that can occur on any VMware host, flat or not.
+    # For example, there might be a .vmx file with the name.
+    if ls $VM_DIR/*/$vm_name.vmx >& /dev/null; then
+	local where=`ls $VM_DIR/*/$vm_name.vmx`
+	echo "$where already exists." > /dev/stderr
+	return 0
+    fi
+    # One last crazy check.  There might be a VM with everything else different
+    # but with the same displayname.
+    if grep -Eq "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"${vm_name}\"" $VM_DIR/*/*.vmx; then
+	echo "The following .vmx files define VMs named '$vm_name'." > /dev/stderr
+	grep -El "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"${vm_name}\"" $VM_DIR/*/*.vmx > /dev/stderr
+	return 0
+    fi
+    # At this point it certainly looks as if the proposed VM doesn't already
+    # exist.
+    return 1
+}
+
+function vm_name_problem {
+    # Make sure the VM name is OK -- is it valid?  Does it already exist?  If
+    # there is a problem, return true (0).  If things are fine, return false
+    # (1).
+    local vm_name="$1"
+    if vm_name_invalid "$vm_name"; then
+	return 0
+    fi
+    if vm_name_exists "$vm_name"; then
+	return 0
+    fi
+    return 1
+}
+
+function vm_usr_local_size_problem {
+    # Make sure the size of the /usr/local disk makes sense, we have space for
+    # it, etc.  Affects $USR_LOCAL_SIZE.
+
+    # Make sure the size is intelligible
+    USR_LOCAL_SIZE=`lvm_to_da $USR_LOCAL_SIZE`
+    # Make sure we have enough space
+    local usr_local_size_bytes=`da_to_bytes $USR_LOCAL_SIZE`
+    local other_data_bytes=`da_to_bytes $BASE_VM_SIZE`
+    local total_bytes=`dc_add $usr_local_size_bytes $other_data_bytes`
+    local vm_size_bytes=`dc_mult $total_bytes 2`
+    local is_enough_space space_left_bytes
+    if [ "$VM_HOST_TYPE" == "vmf" ] || [ "$VM_HOST_TYPE" == "kvm" ]; then
+	test_vol_space $vm_size_bytes
+	is_enough_space=$?
+	space_left_bytes=`vol_space_left $VM_DIR`
+    elif [ "$VM_HOST_TYPE" == "vmw" ]; then
+	test_vg_space $vm_size_bytes
+	is_enough_space=$?
+	space_left_bytes=`vg_space_left`
+    fi
+    if [ $is_enough_space -eq 0 ]; then
+	if [ "$VM_HOST_TYPE" == "vmf" ] || [ "$VM_HOST_TYPE" == "kvm" ]; then
+	    echo "Not enough room left on volume $VM_DIR" > /dev/stderr
+	elif [ "$VM_HOST_TYPE" == "vmw" ]; then
+	    echo "Not enough room left on volume group $VM_VG" > /dev/stderr
+	fi
+	echo `dc_div $space_left_bytes 1048576` MiB left\; requires `dc_div $vm_size_bytes 1048576` MiB > /dev/stderr
+	return 1
+    fi
+
+    # Check the $USR_LOCAL_SIZE to make sure it's not too big or small
+    # (VMware's stated limits are [100.0 MB, 950.0 GB])
+    if [ $usr_local_size_bytes -lt 100000000 ] || \
+	[ $usr_local_size_bytes -gt 950000000000 ]; then
+	echo "Virtual disk /usr/local cannot be smaller than 100 MB or larger than 950 GB" > /dev/stderr
+	return 1
+    fi
+    return 0
+}
+
+function create_qcow2_img {
+    # Creates a QCOW2 virtual disk image in the current directory with the
+    # given name and size.
+    local filename="$1" size="$2"
+    if [ -z "$filename" ]; then
+	# This would be a programming error.
+	echo "Empty virtual disk filename." > /dev/stderr
+	exit 1
+    fi
+    if [ -z "$size" ]; then
+	# This would also be a programming error.
+	echo "No virtual disk size given." > /dev/stderr
+	exit 1
+    fi
+    test_cmd qemu-img create -f qcow2 -o size=${size},preallocation=metadata $filename
+    test_cmd chown qemu:qemu $filename
+}
+
+function prepare_vm_home {
+    # Prepares a home for the VM -- in the case of non-flat VMware hosts, this
+    # means making a LV, making a filesystem on it, making an /etc/fstab entry
+    # for it, making a mount point, and mounting it.  For flat VMware hosts,
+    # this just means making a directory for it.  For KVM hosts, this means
+    # doing nothing.  Requires $VM_NAME, $MEM_SIZE, $USR_LOCAL_SIZE, etc. to be
+    # set.
+
+    # Unless it's KVM, make the mount point
+    if [ ! $KVM ]; then
+	test_cmd mkdir $VM_DIR/$VM_NAME
+	test_cmd chgrp vm $VM_DIR/$VM_NAME
+	test_cmd chmod g+ws $VM_DIR/$VM_NAME
+    fi
+
+    # For non-flat VMware, do the necessary stuff
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	# Make the LV
+	local vm_size=`da_add $BASE_VM_SIZE $USR_LOCAL_SIZE`
+	vm_size=`da_coef 2 $vm_size`
+	local vm_size_lvm=`da_to_lvm $vm_size`
+	test_cmd lvcreate --addtag $VM_TAG -L $vm_size_lvm -n $VM_NAME $VM_VG
+
+	# Generate the filesystem label
+	local vm_ext2_label=`make_ext2_label $VM_NAME`
+
+	# Make the filesystem
+	test_cmd mkfs -t ext3 -L $vm_ext2_label /dev/$VM_VG/$VM_NAME
+
+	# Make a line in /etc/fstab
+	test_cmd echo \"LABEL=$vm_ext2_label	$VM_DIR/$VM_NAME	ext3	defaults	1 2\" >> /etc/fstab
+
+	# Mount the new volume
+	test_cmd mount $VM_DIR/$VM_NAME
+    fi
+}
+
+function install_stemcell {
+    # Copies the stemcell from the server and puts things in the right places.
+
+    echo "Unpacking stemcell tarball ..."
+    if [ $KVM ]; then
+	test_cmd tar zxf /net/cobbler/usr/local/cobbler/pub/stemcell_kvm.tgz -C /
+    else
+	pushd $VM_DIR/$VM_NAME >& /dev/null
+	test_cmd tar zxf /net/cobbler/usr/local/cobbler/pub/stemcell_vmw.tgz --strip-components=1
+	popd >& /dev/null
+    fi
+    echo "Done."
+}
+
+function customize_vm {
+    # After installing a stemcell (see install_stemcell), customize it to the
+    # specifications given in the config file and on the command line.
+
+    if [ $KVM ]; then
+	
+    else
+	local autostart
+	if [ $NOAUTOSTART ]; then
+	    autostart="none"
+	else
+	    autostart="poweron"
+	fi
+	local vmxfile=$VM_DIR/$VM_NAME.vmx
+	modify_vmxfile $vmxfile displayName $VM_NAME autostart $autostart memsize $MEM_SIZE machine.id $VM_NAME numvcpus $NUMVCPUS
+
+ 	# Tell VMware about the new VM
+	register_vm $VM_NAME
+
+ 	# Set the owner/group/permissions of the new files
+ 	set_owners_perms $VM_DIR/$VM_NAME
+    fi
+}
+
+function fix_vmware_perl_api_errors {
+    # Kill off the "Use of uninitialized value" errors
+    VMPERL_START="/usr/lib64/perl5"
+    VMPERL_NAME="VmPerl.pm"
+    for vmperl in `find $VMPERL_START -name $VMPERL_NAME`; do
+	sed -i.bak -re "s/return Version\(\);/return Version() || '';/" $vmperl
+    done
+}
+
+function do_lsvm {
+    # List the VMs and whether they're up or down, in a standard
+    # format.  The command-line option -c sets $LSVM_CSS, which causes
+    # the output to be in HTML <span> tags, for the 'vmlist' script --
+    # the tags are given class "up" or "down", which the CSS can
+    # decide what to do with.
+    get_lsvm_options "$@"
+    if [ $LSVM_CSS ]; then
+	if [ $KVM ]; then
+	    local line
+	    for line in `virsh -r -c qemu:///system list --all | sed -re '/^[[:space:]]*$/d' -e '/^--/d' -e '/^[[:space:]]*Id/d' -e 's/^[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+(.*)$/:\2:\3:/' -e 's/[[:space:]]/_/g' | sort -n -t : -k 1`; do
+		echo "$line" | sed -re 's/^:([^:]+):running:$/<span class="up">\1<\/span>/i' -e 's/^:([^:]+):.*$/<span class="down">\1<\/span>/i'
+	    done
+	else
+	    local vmx
+	    for vmx in `vmware-cmd -l`; do
+		local dir=`dirname "$vmx"`
+		local vm=`basename "$dir"`
+		local state=`vmware-cmd "$vmx" getstate | sed -re 's/^.*=[[:space:]]*//'`
+		echo :$vm:$state:
+	    done | sort -n -t : -k 1 | sed -re 's/^:([^:]+):on:$/<span class="up">\1<\/span>/i' -e 's/^:([^:]+):.*$/<span class="down">\1<\/span>/i'
+	fi
+    else
+	if [ $KVM ]; then
+	    local line
+	    for line in `virsh -r -c qemu:///system list --all | sed -re '/^[[:space:]]*$/d' -e '/^--/d' -e '/^[[:space:]]*Id/d' -e 's/^[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+(.*)$/:\2:\3:/' -e 's/[[:space:]]/_/g' | sort -n -t : -k 1`; do
+		echo "$line" | sed -re 's/^:([^:]+):running:$/\1 up/i' -e 's/^:([^:]+):.*$/\1 down/i'
+	    done | column -t
+	else
+	    local vmx
+	    for vmx in `vmware-cmd -l`; do
+		local dir=`dirname "$vmx"`
+		local vm=`basename "$dir"`
+		local state=`vmware-cmd "$vmx" getstate | sed -re 's/^.*=[[:space:]]*//'`
+		echo :$vm:$state:
+	    done | sort -n -t : -k 1 | sed -re 's/^:([^:]+):on:$/\1 up/i' -e 's/^:([^:]+):.*$/\1 down/i' | column -t
+	fi
+    fi
+}
+
+function do_mkvm {
+    # Make a VM.
+    # Get options
+    get_mkvm_options "$@"
+    shift $(( $OPTIND - 1 ))
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    if [ $KVM ]; then
+	if ! xset q >& /dev/null; then
+	    echo "Creating VMs requires X11.  Be sure it is enabled." > /dev/stderr
+	    exit 1
+	fi
+    fi
+
+    # Test the proposed name.
+    if vm_name_problem "$1"; then
+	echo "Unable to proceed." > /dev/stderr
+	if [ -z "$1" ]; then
+	    print_mkvm_help
+	    exit 1
+	fi
+    fi
+
+    # Test the proposed size of the /usr/local disk.
+    if vm_usr_local_size_problem; then
+	echo "Unable to proceed." > /dev/stderr
+	exit 1
+    fi
+
+    # Similarly with the memory size -- but if $MEM_SIZE is not set, that must
+    # mean that we're taking the memory size from the stemcell VM, so leave it
+    # unset in that case
+    if [ $MEM_SIZE ]; then
+	MEM_SIZE=`lvm_to_da $MEM_SIZE`
+    fi
+
+    # If you can think of any more reasons why we shouldn't go ahead
+    # and make the VM, put them before this point
+
+    # Make a landing zone for the VM
+    prepare_vm_home
+
+    # Put the VM there
+    install_stemcell
+
+    # Customize the VM
+    customize_vm
+
+#     if [ $KVM ]; then
+# 	# Make the disks
+# 	HDA_SIZE=32
+# 	HDB_SIZE=`da_to_gib $USR_LOCAL_SIZE`
+# 	RAM_MB=`da_to_mib $MEM_SIZE`
+# 	pushd $VM_DIR >& /dev/null
+# 	create_qcow2_img "${VM_NAME}-hda.qcow2" "${HDA_SIZE}G"
+# 	create_qcow2_img "${VM_NAME}-hdb.qcow2" "${HDB_SIZE}G"
+# 	popd >& /dev/null
+
+# 	# Show the drives to libvirt.
+# 	test_cmd virsh pool-refresh default
+
+# 	# We want to make sure, to the extent that we can, that the network
+# 	# interfaces have unique MAC addresses.  It will cause network problems
+# 	# if more than one interface on the same LAN has the same MAC address.
+# 	# So, when possible, we'll use the host's IP address to generate its
+# 	# MAC address, and then they'll never be identical.  When we don't know
+# 	# what the hostname will be, we'll just create a random one and hope
+# 	# for the best.
+
+# 	# We'll look up the VM name and see whether it's found as a hostname in
+# 	# DNS, and use the global and local IPs to create MAC addresses for
+# 	# eth0 and eth1.  If the VM name isn't a DNS hostname, all we can do is
+# 	# make up a random one.
+
+# 	# Cut any trailing ".<version>" off the name for the purpose of
+# 	# determining the short hostname.
+
+# 	SHOST=`echo "$VM_NAME" | cut -d . -f 1`
+
+# 	# Special case: If SHOST is 'stemcell', leave the addresses as they
+# 	# are.  There's no 'stemcell' service and no install script for
+# 	# 'stemcell', so if somebody's creating a 'stemcell' virtual machine,
+# 	# it's an unusual situation, and there's no way to figure out from here
+# 	# what they're trying to do.
+
+# 	if [ "$SHOST" == 'stemcell' ]; then
+# 	    RAND=`dd if=/dev/urandom bs=1 count=2 2>/dev/null | od -t x2 | head -n 1 | cut -d ' ' -f 2 | tr [[:lower:]] [[:upper:]]`
+# 	    GMAC="52:54:00:01:${RAND:0:2}:${RAND:2:2}"
+# 	    RAND=`dd if=/dev/urandom bs=1 count=2 2>/dev/null | od -t x2 | head -n 1 | cut -d ' ' -f 2 | tr [[:lower:]] [[:upper:]]`
+# 	    LMAC="52:54:00:03:${RAND:0:2}:${RAND:2:2}"
+# 	else
+# 	    GHOST="$SHOST.grid.iu.edu"
+# 	    LHOST="$SHOST.goc"
+# 	    GIP=`getent hosts "$GHOST" | cut -d " " -f 1`
+# 	    LIP=`getent hosts "$LHOST" | cut -d " " -f 1`
+
+# 	    # We'll just take the last 2 octets of each address and use those
+# 	    # as the last 2 octets of the MAC address.  That should give us
+# 	    # unique MAC addresses.  To be even more unique, we'll use a code
+# 	    # for the 4th octet:
+
+# 	    # 00 = eth0, last two octets taken from global IP
+# 	    # 01 = eth0, last two octets randomly generated
+# 	    # 02 = eth1, last two octets taken from local IP
+# 	    # 03 = eth1, last two octets randomly generated
+# 	    # For example, a GIP of 129.79.14.160 would become 52:54:00:00:0E:A0.
+
+# 	    if [ -n "$GIP" ]; then
+# 		GMAC5=`echo "$GIP" | cut -d . -f 3`
+# 		GMAC6=`echo "$GIP" | cut -d . -f 4`
+# 		GMAC=`printf "52:54:00:00:%02X:%02X" $GMAC5 $GMAC6`
+# 	    else
+# 		RAND=`dd if=/dev/urandom bs=1 count=2 2>/dev/null | od -t x2 | head -n 1 | cut -d ' ' -f 2 | tr [[:lower:]] [[:upper:]]`
+# 		GMAC="52:54:00:01:${RAND:0:2}:${RAND:2:2}"
+# 	    fi
+
+# 	    if [ -n "$LIP" ]; then
+# 		LMAC5=`echo "$LIP" | cut -d . -f 3`
+# 		LMAC6=`echo "$LIP" | cut -d . -f 4`
+# 		LMAC=`printf "52:54:00:02:%02X:%02X" $LMAC5 $LMAC6`
+# 	    else
+# 		RAND=`dd if=/dev/urandom bs=1 count=2 2>/dev/null | od -t x2 | head -n 1 | cut -d ' ' -f 2 | tr [[:lower:]] [[:upper:]]`
+# 		LMAC="52:54:00:03:${RAND:0:2}:${RAND:2:2}"
+# 	    fi
+# 	fi
+
+# 	# Create the VM.
+# 	# --pxe: boot from PXE the first time even though it has hard drives
+# 	# --os-type, --os-variant: optimize hardware settings for type of OS
+# 	# --check-cpu: warn if the number of virtual CPUs exceeds the number of physical CPUs
+# 	# -k: set the type of keyboard for the VNC console
+# 	# -n: set the name ("domain") of the VM
+# 	# -r: set the amount of RAM in MB
+# 	# --disk: add and configure a drive
+# 	# --network: add and configure a network adapter
+# 	# --autostart: the VM should start when the host boots up
+# 	# --noreboot: the VM shouldn't reboot when installation is complete (this doesn't work anyway)
+# 	# --wait: how long (in minutes) to wait for installation to finish (negative=forever)
+
+# #	if [ $TEST_MODE ]; then
+# #	    echo "(test mode) virt-install --pxe \\"
+# #	    echo "  --os-type=linux --os-variant=rhel5.4 \\"
+# #	    echo "  --check-cpu -k en-us -n \"$VM_NAME\" -r $RAM_MB --vcpus=$NUMVCPUS \\"
+# #	    echo "  --disk path=\"$VM_DIR/${VM_NAME}-hda.qcow2\",bus=ide,format=qcow2,cache=none \\"
+# #	    echo "  --disk path=\"$VM_DIR/${VM_NAME}-hdb.qcow2\",bus=ide,format=qcow2,cache=none \\"
+# #	    echo "  --network bridge=br0,model=e1000,mac=$GMAC \\"
+# #	    echo "  --network bridge=br1,model=e1000,mac=$LMAC \\"
+# #	    echo "  --autostart --noreboot --wait=-1 \\"
+# #	else
+# 	virt-install --pxe \
+# 	    --os-type=linux --os-variant=rhel5.4 \
+# 	    --check-cpu -k en-us -n \"$VM_NAME\" -r $RAM_MB --vcpus=$NUMVCPUS \
+# 	    --disk path=\"$VM_DIR/${VM_NAME}-hda.qcow2\",bus=ide,format=qcow2,cache=none \
+# 	    --disk path=\"$VM_DIR/${VM_NAME}-hdb.qcow2\",bus=ide,format=qcow2,cache=none \
+# 	    --network bridge=br0,model=e1000,mac=$GMAC \
+# 	    --network bridge=br1,model=e1000,mac=$LMAC \
+# 	    --autostart --noreboot --wait=-1
+# #	fi
+
+# 	# By default the VM should automatically reboot after installation (in
+# 	# theory, at least; in practice it usually doesn't work), but we don't
+# 	# want this, because we might want to change something before starting
+# 	# it up.  To this end, the PXE boot's kickstart should be configured to
+# 	# shutdown after installation.  The virt-install command's --noreboot
+# 	# option should also prevent it from rebooting after installation, and
+# 	# giving it a negative value for its --wait time should make it wait
+# 	# indefinitely for the VM to shut down after installation before
+# 	# continuing with this script.  So now, if necessary, we can make
+# 	# changes here before starting it up again.
+
+# 	test_cmd virsh start $VM_NAME
+#     else
+# 	# Copy the base VM into the new location
+# 	if [ ! -d /mnt/sysinstall ]; then
+# 	    test_cmd mkdir /mnt/sysinstall
+# 	fi
+
+# #	if [ $TEST_MODE ]; then
+# #	    echo "(test mode) mount -t nfs internal.goc:/home/sysinstall /mnt/sysinstall"
+# #	    echo "(test mode) tar zxf /mnt/sysinstall/stemcell.tgz --strip-components=1"
+# #	    echo "(test mode) umount /mnt/sysinstall"
+# #	    echo "(test mode) rename stemcell $VM_NAME stemcell.*"
+# #	    echo "(test mode) sed -e \"s/^ *displayname *= *\\\".*\\\"/displayName = \\\"$VM_NAME\\\"/i\" $VM_NAME.vmx.bak > $VM_NAME.vmx"
+# #	else
+# 	test_cmd mount -t nfs internal.goc:/home/sysinstall /mnt/sysinstall
+# 	pushd $VM_DIR/$VM_NAME >& /dev/null
+# 	echo Unpacking stemcell tarball ...
+# 	test_cmd tar zxf /mnt/sysinstall/stemcell.tgz --strip-components=1
+# 	echo Done.
+# 	umount /mnt/sysinstall
+# 	test_cmd rename stemcell $VM_NAME stemcell.*
+# 	test_cmd cp --preserve=all $VM_NAME.vmx $VM_NAME.vmx.bak
+# 	test_cmd sed -e \"s/^ *displayname *= *\\\".*\\\"/displayName = \\\"$VM_NAME\\\"/i\" $VM_NAME.vmx.bak > $VM_NAME.vmx
+# 	popd >& /dev/null
+# #	fi
+
+# 	# Make the new /usr/local virtual disk
+# 	pushd $VM_DIR/$VM_NAME >& /dev/null
+# 	test_cmd vmware-vdiskmanager -c -a ide -s `da_to_sectors $USR_LOCAL_SIZE` -t 1 usr_local.vmdk
+# 	popd >& /dev/null
+
+# 	# If the -a option was specified, set the VM to autostart in the config file
+# 	if [ ! $NOAUTOSTART ]; then
+# 	    set_autostart $VM_NAME poweron
+# 	else
+# 	    set_autostart $VM_NAME none
+# 	fi
+
+# 	# Set the memory size
+# 	if [ $MEM_SIZE ]; then
+# 	    set_memsize $VM_NAME $MEM_SIZE
+# 	fi
+
+# 	# Set the machine ID string based on the hostname
+# 	set_machine_id $VM_NAME
+
+# 	# Set the number of virtual CPUs.
+# 	if [ $NUMVCPUS ]; then
+# 	    set_numvcpus $VM_NAME $NUMVCPUS
+# 	fi
+
+# 	# Tell VMware about the new VM
+# 	register_vm $VM_NAME
+
+# 	# Set the owner/group/permissions of the new files
+# 	set_owners_perms $VM_DIR/$VM_NAME
+#     fi
+}
+
+function do_rebuild_stemcell {
+    # Create a VM, boot it using PXE, and allow Cobbler to generate a stemcell
+    # VM.  Then archive that VM for later copying with mkvm.
+    # Get options
+    get_rebuild_stemcell_options "$@"
+    shift $(( $OPTIND - 1 ))
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    if [ $KVM ]; then
+	if ! xset q >& /dev/null; then
+	    echo "Creating VMs requires X11.  Be sure it is enabled." > /dev/stderr
+	    exit 1
+	fi
+    fi
+
+    # Make sure the size is intelligible
+    USR_LOCAL_SIZE=`lvm_to_da 256M`
+
+    MEM_SIZE=`lvm_to_da 1G`
+
+    # Make sure we have enough space
+    USR_LOCAL_SIZE_BYTES=`da_to_bytes $USR_LOCAL_SIZE`
+    OTHER_DATA_BYTES=`da_to_bytes $BASE_VM_SIZE`
+    TOTAL_BYTES=`dc_add $USR_LOCAL_SIZE_BYTES $OTHER_DATA_BYTES`
+    VM_SIZE_BYTES=`dc_mult $TOTAL_BYTES 2`
+    if [ "$VM_HOST_TYPE" == "vmf" ] || [ "$VM_HOST_TYPE" == "kvm" ]; then
+	test_vol_space $VM_SIZE_BYTES
+	IS_ENOUGH_SPACE=$?
+	SPACE_LEFT_BYTES=`vol_space_left $VM_DIR`
+    elif [ "$VM_HOST_TYPE" == "vmw" ]; then
+	test_vg_space $VM_SIZE_BYTES
+	IS_ENOUGH_SPACE=$?
+	SPACE_LEFT_BYTES=`vg_space_left`
+    fi
+    if [ $IS_ENOUGH_SPACE -eq 0 ]; then
+	if [ "$VM_HOST_TYPE" == "vmf" ] || [ "$VM_HOST_TYPE" == "kvm" ]; then
+	    echo "Not enough room left on volume $VM_DIR" > /dev/stderr
+	elif [ "$VM_HOST_TYPE" == "vmw" ]; then
+	    echo "Not enough room left on volume group $VM_VG" > /dev/stderr
+	fi
+	echo `dc_div $SPACE_LEFT_BYTES 1048576` MiB left\; requires `dc_div $VM_SIZE_BYTES 1048576` MiB > /dev/stderr
+	exit 1
+    fi
+
+    # Check the $USR_LOCAL_SIZE to make sure it's not too big or small
+    # (VMware's stated limits are [100.0 MB, 950.0 GB])
+    if [ $USR_LOCAL_SIZE_BYTES -lt 100000000 ] || \
+	[ $USR_LOCAL_SIZE_BYTES -gt 950000000000 ]; then
+	echo "Virtual disk /usr/local cannot be smaller than 100 MB or larger than 950 GB" > /dev/stderr
+	exit 1
+    fi
+    
+    # Make sure there isn't already an LV with that name
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	for lv in `lvs --noheadings --separator : $VM_VG | sed -e 's/^ *//' | cut -d : -f 1`; do
+	    if [ $lv == "stemcell" ]; then
+		echo "There is already a logical volume named 'stemcell; please remedy the situation" > /dev/stderr
+		exit 1
+	    fi
+	done
+
+	# Make sure there isn't already a mount point with that name
+	if [ -e $VM_DIR/stemcell ]; then
+	    echo "$VM_DIR/stemcell already exists; please remedy the situation" > /dev/stderr
+	    exit 1
+	fi
+
+	# Check /etc/fstab to see if there's a mount line for that name
+	if grep -Eq ^[^[:space:]]+[[:space:]]+$VM_DIR/stemcell/?[[:space:]] /etc/fstab; then
+	    echo "There is a mount line in /etc/fstab for $VM_DIR/stemcell; please remedy the situation" > /dev/stderr
+	    exit 1
+	fi
+    fi
+
+    if [ ! $KVM ]; then
+	# Check all the $VM_DIR/* directories for a stemcell.vmx file
+	if ls $VM_DIR/*/stemcell.vmx >& /dev/null; then
+	    where=`ls $VM_DIR/*/stemcell.vmx`
+	    echo "There is a $where; please fix this" > /dev/stderr
+	    exit 1
+	fi
+
+	# OK, one more crazy check.  Check all the $VM_DIR/*/*.vmx files for a
+	# displayname = "stemcell" line.
+
+	if grep -Eq "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"stemcell\"" $VM_DIR/*/*.vmx; then
+	    echo "The following files contain references to stemcell; please correct" > /dev/stderr
+	    grep -El "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"stemcell\"" $VM_DIR/*/*.vmx > /dev/stderr
+	    exit 1
+	fi
+    fi
+
+    # If you can think of any more reasons why we shouldn't go ahead
+    # and make the VM, put them before this point
+
+    # Generate the filesystem label
+    VM_EXT2_LABEL=`make_ext2_label stemcell`
+
+    # Make the LV
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	VM_SIZE=`da_add $BASE_VM_SIZE $USR_LOCAL_SIZE`
+	VM_SIZE=`da_coef 2 $VM_SIZE`
+	VM_SIZE_LVM=`da_to_lvm $VM_SIZE`
+	test_cmd lvcreate --addtag $VM_TAG -L $VM_SIZE_LVM -n stemcell $VM_VG
+
+	# Make the filesystem
+	test_cmd mkfs -t ext3 -L $VM_EXT2_LABEL /dev/$VM_VG/stemcell
+    fi
+
+    if [ ! $KVM ]; then
+	# Make the mount point
+	test_cmd mkdir $VM_DIR/stemcell
+	test_cmd chgrp vm $VM_DIR/stemcell
+	test_cmd chmod g+ws $VM_DIR/stemcell
+    fi
+
+    # Make a line in /etc/fstab
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	test_cmd echo \"LABEL=$VM_EXT2_LABEL	$VM_DIR/stemcell	ext3	defaults	1 2\" >> /etc/fstab
+
+	# Mount the new volume
+	test_cmd mount $VM_DIR/stemcell
+    fi
+
+    if [ $KVM ]; then
+	# Make the disks
+	HDA_SIZE=32
+	HDB_SIZE=`da_to_gib $USR_LOCAL_SIZE`
+	RAM_MB=`da_to_mib $MEM_SIZE`
+	pushd $VM_DIR >& /dev/null
+	create_qcow2_img "stemcell-hda.qcow2" "${HDA_SIZE}G"
+	create_qcow2_img "stemcell-hdb.qcow2" "${HDB_SIZE}G"
+	popd >& /dev/null
+
+	# Show the drives to libvirt.
+	test_cmd virsh pool-refresh default
+
+	# In this case, where we're creating a stemcell VM, we want to make
+	# sure that the eth1 network interface has a standardized MAC address
+	# that the Cobbler server's system record can recognize.  Then it will
+	# know to boot this VM into Anaconda and run the stemcell kickstart
+	# file.  The eth0 MAC address is immaterial at this point, and we will
+	# have to remember to change the MAC addresses to something unique when
+	# actually installing the image.
+
+	GMAC="52:54:00:04:00:00"
+	LMAC="52:54:00:06:00:00"
+
+	# Create the VM.
+	# --pxe: boot from PXE the first time even though it has hard drives
+	# --os-type, --os-variant: optimize hardware settings for type of OS
+	# --check-cpu: warn if the number of virtual CPUs exceeds the number of physical CPUs
+	# -k: set the type of keyboard for the VNC console
+	# -n: set the name ("domain") of the VM
+	# -r: set the amount of RAM in MB
+	# --disk: add and configure a drive
+	# --network: add and configure a network adapter
+	# --autostart: the VM should start when the host boots up
+	# --noreboot: the VM shouldn't reboot when installation is complete (this doesn't work anyway)
+	# --wait: how long (in minutes) to wait for installation to finish (negative=forever)
+
+#	if [ $TEST_MODE ]; then
+#	    echo "(test mode) virt-install --pxe \\"
+#	    echo "  --os-type=linux --os-variant=rhel5.4 \\"
+#	    echo "  --check-cpu -k en-us -n \"stemcell\" -r $RAM_MB --vcpus=$NUMVCPUS \\"
+#	    echo "  --disk path=\"$VM_DIR/${VM_NAME}-hda.qcow2\",bus=ide,format=qcow2,cache=none \\"
+#	    echo "  --disk path=\"$VM_DIR/${VM_NAME}-hdb.qcow2\",bus=ide,format=qcow2,cache=none \\"
+#	    echo "  --network bridge=br0,model=e1000,mac=$GMAC \\"
+#	    echo "  --network bridge=br1,model=e1000,mac=$LMAC \\"
+#	    echo "  --autostart --noreboot --wait=-1 \\"
+#	else
+	test_cmd virt-install --pxe \
+	    --os-type=linux --os-variant=rhel5.4 \
+	    --check-cpu -k en-us -n \"stemcell\" -r $RAM_MB --vcpus=$NUMVCPUS \
+	    --disk path=\"$VM_DIR/stemcell-hda.qcow2\",bus=ide,format=qcow2,cache=none \
+	    --disk path=\"$VM_DIR/stemcell-hdb.qcow2\",bus=ide,format=qcow2,cache=none \
+	    --network bridge=br0,model=e1000,mac=$GMAC \
+	    --network bridge=br1,model=e1000,mac=$LMAC \
+	    --autostart --noreboot --wait=-1
+#	fi
+
+	# By default the VM should automatically reboot after installation (in
+	# theory, at least; in practice it usually doesn't work), but we don't
+	# want this, because we want to archive the disk image, not start it
+	# up.  To this end, the PXE boot's kickstart should be configured to
+	# shutdown after installation.  The virt-install command's --noreboot
+	# option should also prevent it from rebooting after installation, and
+	# giving it a negative value for its --wait time should make it wait
+	# indefinitely for the VM to shut down after installation before
+	# continuing with this script.  Therefore, when we reach this point,
+	# the OS has been installed on the VM and it has been shut down
+	# gracefully.  At this point we can copy the VM to the server.
+
+	echo "Copying VM files to server ..."
+	test_cmd tar zcvf /net/cobbler/usr/local/cobbler/pub/stemcell-kvm.tar.gz \
+	    -C / \
+	    /etc/libvirt/qemu/stemcell.xml \
+	    $VM_DIR/stemcell-hda.qcow2 \
+	    $VM_DIR/stemcell-hdb.qcow2
+    else
+	# Create a new VMware VM
+
+	# ...
+
+	# Make the new /usr/local virtual disk
+	pushd $VM_DIR/stemcell >& /dev/null
+	test_cmd vmware-vdiskmanager -c -a ide -s `da_to_sectors $USR_LOCAL_SIZE` -t 1 usr_local.vmdk
+	popd >& /dev/null
+
+	# If the -a option was specified, set the VM to autostart in the config file
+	if [ ! $NOAUTOSTART ]; then
+	    test_cmd set_autostart stemcell poweron
+	else
+	    test_cmd set_autostart stemcell none
+	fi
+
+	# Set the memory size
+	if [ $MEM_SIZE ]; then
+	    test_cmd set_memsize stemcell $MEM_SIZE
+	fi
+
+	# Set the machine ID string based on the hostname
+	test_cmd set_machine_id stemcell
+
+	# Set the number of virtual CPUs.
+	if [ $NUMVCPUS ]; then
+	    test_cmd set_numvcpus stemcell $NUMVCPUS
+	fi
+
+	# Tell VMware about the new VM
+	test_cmd register_vm stemcell
+
+	# Set the owner/group/permissions of the new files
+	test_cmd set_owners_perms $VM_DIR/stemcell
+
+	# At this point we can copy the VM to the server.
+
+    fi
+}
+
+function do_rmvm {
+    # Remove a VM.
+    # Make sure we have a VM name
+    if [ -z $1 ]; then
+	echo "Usage: rmvm <name of VM to delete>" > /dev/stderr
+	exit 1
+    fi
+    VM_NAME=$1
+
+    # Do not allow changing of the base VM
+#    if [ $VM_NAME == `basename $VM_SOURCE` ]; then
+#	echo "Deleting the base VM would be very bad" > /dev/stderr
+#	exit 1
+#    fi
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    if [ $KVM ]; then
+	# Requires an RPM called Perl-XML-Twig
+
+	# VM running?
+
+	VMSTATE=`virsh domstate $VM_NAME`
+
+	if [ $? -ne 0 ]; then
+	    echo "Trouble getting status of VM '$VM_NAME' -- it may not exist" > /dev/stderr
+	    exit 1
+	fi
+
+	if [ "$VMSTATE" != "idle" ] && [ "$VMSTATE" != "shut off" ] \
+	    && [ "$VMSTATE" != "crashed" ]; then
+	    echo "VM '$VM_NAME' is running -- cannot delete" > /dev/stderr
+	    exit 1
+	fi
+
+	declare -A VOL
+	n=0
+	for i in `virsh dumpxml $VM_NAME | xml_grep -cond '//disk/source[@file]' --nowrap --pretty_print | sed -re 's/^.*file="([^"]*).*$/\1/'`; do
+	    VOL[$n]="$i"
+	    (( ++n ))
+	done
+
+	echo "Undefining $VM_NAME ..."
+	virsh undefine $VM_NAME
+
+	for i in ${VOL[@]}; do
+	    echo "Deleting $i ..."
+	    virsh vol-delete $i
+	done
+    else
+	# Make sure it exists
+	if [ ! -d $VM_DIR/$VM_NAME ]; then
+	    echo "$VM_DIR/$VM_NAME does not exist or is not a directory" > /dev/stderr
+	    exit 1
+	fi
+
+	# Can't delete a running VM
+	if vm_running $VM_NAME; then
+	    echo "The VM '$VM_NAME' is currently running; cannot delete" > /dev/stderr
+	    exit 1
+	fi
+
+	# Ask the obligatory "are you sure" question
+	read -p "Are you sure you want to DELETE the '$VM_NAME' VM? (y/n) " YORN
+	if [ "$YORN" != "y" ]; then
+	    echo "VM not deleted."
+	    exit 0
+	fi
+
+	# Tell VMware to drop this VM.
+	unregister_vm $VM_NAME
+
+	# Unmount the volume.
+	if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	    umount $VM_DIR/$VM_NAME
+	fi
+
+	# Remove the mount point.
+	rm -rf $VM_DIR/$VM_NAME
+
+	# Remove the mount line from /etc/fstab.
+	if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	    cp --preserve=all /etc/fstab /etc/fstab.bak
+	    grep -Ev ^[^[:space:]]+[[:space:]]+$VM_DIR/$VM_NAME/?[[:space:]] /etc/fstab.bak > /etc/fstab
+
+	# Get rid of the LV, first waiting a few seconds to make sure things
+	# settle down (rmvm has crashed LVM in the past; it's good to be
+	# careful here).
+	    sleep 3
+
+	# Switch the LV to non-active.  This may also help to prevent LVM
+	# trouble.
+	    lvchange -a n /dev/$VM_VG/$VM_NAME
+	    sleep 3
+	    lvremove /dev/$VM_VG/$VM_NAME
+	fi
+    fi
+
+    echo "VM deleted."
+}
+
+function do_mvvm {
+    # Make sure the old VM exists
+    if [ -z $1 ]; then
+	echo "Usage: mvvm <current name of VM> <new name of VM>" > /dev/stderr
+	exit 1
+    fi
+    VM_OLD_NAME=$1
+
+    # Do not allow changing of the base VM
+#    if [ $VM_OLD_NAME == `basename $VM_SOURCE` ]; then
+#	echo "Altering the base VM would be very bad" > /dev/stderr
+#	exit 1
+#    fi
+
+    if [ $KVM ]; then
+	echo "mvvm not yet implemented for KVM hosts" > /dev/stderr
+	exit 1
+    fi
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure there is a $VM_DIR/$VM_OLD_NAME
+    if [ ! -d $VM_DIR/$VM_OLD_NAME ]; then
+	echo "$VM_DIR/$VM_OLD_NAME does not exist or is not a directory" > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure the .vmx file exists
+    if [ ! -e $VM_DIR/$VM_OLD_NAME/${VM_OLD_NAME}.vmx ]; then
+	echo "$VM_DIR/$VM_OLD_NAME/${VM_OLD_NAME}.vmx does not exist" > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure there is a mountable volume
+    if grep -Eq '^LABEL=$VM_DIR/$VM_OLD_NAME/?[[:space:]]' /etc/fstab; then
+	echo "No record for $VM_DIR/$VM_OLD_NAME in /etc/fstab" > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure there is a LV
+    if ! lvdisplay /dev/$VM_VG/$VM_OLD_NAME >& /dev/null; then
+	echo "No volume /dev/$VM_VG/$VM_OLD_NAME exists" > /dev/stderr
+	exit 1
+    fi
+
+    # Can't rename a running VM
+    if vm_running $VM_OLD_NAME; then
+	echo "The VM '$VM_OLD_NAME' is currently running; cannot rename" > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure we have a new VM name
+    if [ -z $2 ]; then
+	echo "Usage: mvvm <current name of VM> <new name of VM>" > /dev/stderr
+	exit 1
+    fi
+    VM_NEW_NAME=$2
+
+    # Make sure the new VM name is legal
+    if test_vm_name $VM_NEW_NAME; then
+	echo "The name '$VM_NEW_NAME' contains illegal characters." > /dev/stderr
+	echo "Make sure it contains nothing but letters, numbers or _.+- and try again." > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure there isn't already an LV with that name
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	for lv in `lvs --noheadings --separator : $VM_VG | sed -e 's/^ *//' | cut -d : -f 1`; do
+	    if [ $lv == $VM_NEW_NAME ]; then
+		echo "There is already a logical volume named $VM_NEW_NAME; please try a different name" > /dev/stderr
+		exit 1
+	    fi
+	done
+    fi
+
+    # Make sure there isn't already a mount point with that name
+    if [ -e $VM_DIR/$VM_NEW_NAME ]; then
+	echo "$VM_DIR/$VM_NEW_NAME already exists; please try a different name" > /dev/stderr
+	exit 1
+    fi
+
+    # Check /etc/fstab to see if there's a mount line for that name
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	if grep -Eq ^[^[:space:]]+[[:space:]]+$VM_DIR/$VM_NEW_NAME/?[[:space:]] /etc/fstab; then
+	    echo "There is a mount line in /etc/fstab for $VM_DIR/$VM_NEW_NAME; please try a different name" > /dev/stderr
+	    exit 1
+	fi
+    fi
+
+    # Check all the $VM_DIR/* directories for a $VM_NEW_NAME.vmx file
+    if ls $VM_DIR/*/$VM_NEW_NAME.vmx >& /dev/null; then
+	where=`ls $VM_DIR/*/$VM_NEW_NAME.vmx`
+	echo "There is a $where; please fix this or use a different name" > /dev/stderr
+	exit 1
+    fi
+
+    # OK, one more crazy check.  Check all the $VM_DIR/*/*.vmx files
+    # for a displayname = "$VM_NEW_NAME" line.
+    if grep -Eq "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"${VM_NEW_NAME}\"" $VM_DIR/*/*.vmx; then
+	echo "The following files contain references to $VM_NEW_NAME; please correct or use a different name" > /dev/stderr
+	grep -El "^[[:space:]]*displayname[[:space:]]*=[[:space:]]*\"${VM_NEW_NAME}\"" $VM_DIR/*/*.vmx > /dev/stderr
+	exit 1
+    fi
+
+    # If you can think of any more reasons why we shouldn't go ahead
+    # and rename the VM, put them before this point
+
+    # Tell VMware to forget about this VM under its old name.
+    unregister_vm $VM_OLD_NAME
+
+    # Unmount the VM under its old name
+    pushd $VM_DIR
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	umount $VM_OLD_NAME
+    fi
+
+    # Change the mount point's name
+    mv $VM_OLD_NAME $VM_NEW_NAME
+
+    if [ "$VM_HOST_TYPE" == "vmw" ]; then
+	# Remove the filesystem label
+	e2label /dev/$VM_VG/$VM_OLD_NAME ''
+
+	# Generate the new filesystem label
+	VM_EXT2_LABEL=`make_ext2_label $VM_NEW_NAME`
+
+	# Change the line in /etc/fstab -- easiest to delete the old one and add a new one
+	cp --preserve=all /etc/fstab /etc/fstab.bak
+	grep -Ev ^[^[:space:]]+[[:space:]]+$VM_DIR/$VM_OLD_NAME/?[[:space:]] /etc/fstab.bak > /etc/fstab
+	echo "LABEL=$VM_EXT2_LABEL	$VM_DIR/$VM_NEW_NAME	ext3	defaults	1 2" >> /etc/fstab
+
+	# Rename the LV
+	lvrename $VM_VG $VM_OLD_NAME $VM_NEW_NAME
+
+	# Change the filesystem label
+	e2label /dev/$VM_VG/$VM_NEW_NAME $VM_EXT2_LABEL
+
+	# Remount the LV
+	mount $VM_NEW_NAME
+    fi
+    popd
+
+    # Change the .vmx file's name
+    pushd $VM_DIR/$VM_NEW_NAME
+    mv $VM_OLD_NAME.vmx $VM_NEW_NAME.vmx
+
+    # Change the displayname within the .vmx file
+    cp --preserve=all $VM_NEW_NAME.vmx $VM_NEW_NAME.vmx.bak
+    sed -e "s/^ *displayname *= *\".*\"/displayName = \"$VM_NEW_NAME\"/i" $VM_NEW_NAME.vmx.bak > $VM_NEW_NAME.vmx
+    popd
+
+    # Tell VMware to open the VM under its new name
+    register_vm $VM_NEW_NAME
+
+    # Set the owner/group/permissions of the files, just to make sure
+    set_owners_perms $VM_DIR/$VM_NEW_NAME
+}
+
+function do_allvm {
+    # Basically this just runs the vmware-cmd or virsh command on all vms on
+    # the system, which is something I found myself doing a lot by hand
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    # Make sure there's a command
+    if [ -z $1 ]; then
+	if [ $KVM ]; then
+	    echo "Usage: allvm <domain command from virsh>" > /dev/stderr
+	    virsh help domain
+	    exit 1
+	else
+	    echo "Usage: allvm <command from vmware-cmd>" > /dev/stderr
+	    vmware-cmd --list
+	    exit 1
+	fi
+    fi
+    ARGS=$*
+
+    if [ $KVM ]; then
+	for vm in `virsh list --all`; do
+	    echo -n "$vm: "
+	    virsh $ARGS $vm
+	done
+    else
+	for vm in `vmware-cmd -l`; do
+	    echo -n "$vm: "
+	    vmware-cmd $vm $ARGS
+	done
+    fi
+}
+
+function do_rebuild_vmware {
+    # I find myself doing this all the time too
+
+    if [ $KVM ]; then
+	echo "You don't need to rebuild VMWare Server -- this is a KVM host!" > /dev/stderr
+	exit 0
+    fi
+
+    if [ "$USER" != "root" ]; then
+	echo "Must be root." > /dev/stderr
+	exit 1
+    fi
+
+    if service vmware status; then
+	echo "Not reconfiguring vmware server -- it doesn't need it, as it's currently running." > /dev/stderr
+	exit 0
+    fi
+
+    CONFIG=/etc/vmware/config
+    AUTHD=/etc/pam.d/vmware-authd
+
+    echo "Reconfiguring vmware server ..." > /dev/stderr
+    for file in $CONFIG $AUTHD; do
+	cp -fp $file $file.bak
+    done
+    /usr/bin/vmware-config.pl -c -d -skipstopstart
+    for file in $CONFIG $AUTHD; do
+	cp -fp $file.bak $file
+    done
+
+    fix_vmware_perl_api_errors
+
+    service vmware start
+}
+
+function do_stop {
+    # Shut down a VM in the proper way
+
+    local VMSTATE VMXFILE
+
+    VM_NAME="${VM_NAME:-$1}"
+    if [ $KVM ]; then
+	# Make sure there is such a VM and that it's on
+	VMSTATE=`virsh domstate $VM_NAME`
+	if [ $? -ne 0 ]; then
+	    echo "Trouble accessing VM '$VM_NAME' -- it may not exist" > /dev/stderr
+	    exit 1
+	fi
+	if [ "$VMSTATE" != "running" ]; then
+	    echo "Cannot shut down VM '$VM_NAME' -- it is not currently on" > /dev/stderr
+	    exit 1
+	fi
+	# Do a "virsh shutdown" on it
+	virsh shutdown "$VM_NAME"
+    else
+	# Make sure there is such a VM and that it's on
+	if [ ! -d $VM_DIR/$VM_NAME ]; then
+	    echo "$VM_DIR/$VM_NAME does not exist or is not a directory" > /dev/stderr
+	    exit 1
+	fi
+	VMXFILE="$VM_DIR/$VM_NAME/$VM_NAME.vmx"
+	if [ ! -e "$VMXFILE" ]; then
+	    echo "$VMXFILE does not exist" > /dev/stderr
+	    exit 1
+	fi
+	VMSTATE=`vmware-cmd "$VMXFILE" getstate`
+	if [ $? -ne 0 ]; then
+	    echo "Trouble getting status of VM '$VM_NAME' -- it may not exist" > /dev/stderr
+	    exit 1
+	fi
+	if [ "${VMSTATE: -2:2}" != "on" ]; then
+	    echo "Cannot shut down VM '$VM_NAME' -- it is not currently on" > /dev/stderr
+	    exit 1
+	fi
+	# Do a "vmware-cmd <.vmx file> stop" on it
+	vmware-cmd "$VMXFILE" stop
+    fi
+    # Wait for it to actually be down
+    while vm_running "$VM_NAME"; do
+	sleep 5
+    done
+}
+
+function do_start {
+    # Start up a VM
+
+    local VMSTATE VMXFILE
+
+    VM_NAME="${VM_NAME:-$1}"
+    if [ $KVM ]; then
+	# Make sure there is such a VM and that it's off
+	VMSTATE=`virsh domstate $VM_NAME`
+	if [ $? -ne 0 ]; then
+	    echo "Trouble accessing VM '$VM_NAME' -- it may not exist" > /dev/stderr
+	    exit 1
+	fi
+	if [ "$VMSTATE" != "shut off" ]; then
+	    echo "Cannot start VM '$VM_NAME' -- it is not currently off" > /dev/stderr
+	    exit 1
+	fi
+	# Do a "virsh start" on it
+	virsh start "$VM_NAME"
+    else
+	# Make sure there is such a VM and that it's off
+	if [ ! -d $VM_DIR/$VM_NAME ]; then
+	    echo "$VM_DIR/$VM_NAME does not exist or is not a directory" > /dev/stderr
+	    exit 1
+	fi
+	VMXFILE="$VM_DIR/$VM_NAME/$VM_NAME.vmx"
+	if [ ! -e "$VMXFILE" ]; then
+	    echo "$VMXFILE does not exist" > /dev/stderr
+	    exit 1
+	fi
+	VMSTATE=`vmware-cmd "$VMXFILE" getstate`
+	if [ $? -ne 0 ]; then
+	    echo "Trouble getting status of VM '$VM_NAME' -- it may not exist" > /dev/stderr
+	    exit 1
+	fi
+	if [ "${VMSTATE: -3:3}" != "off" ]; then
+	    echo "Cannot start VM '$VM_NAME' -- it is not currently off" > /dev/stderr
+	    exit 1
+	fi
+	# Do a "vmware-cmd <.vmx file> start" on it
+	vmware-cmd "$VMXFILE" start
+    fi
+    # Wait for it to actually be up
+    while ! vm_running "$VM_NAME"; do
+	sleep 5
+    done
+}
+
+function do_snapshot_all {
+    # Another common function I find myself doing all the time
+
+    local VMXFILE
+
+    # For each VM that's up, we're going to stop it, delete its disk image
+    # backups or merge its snapshot, make new backups or a new snapshot, and
+    # then restart it.
+
+    for VM_NAME in `lsvm | grep 'up$' | cut -d ' ' -f 1`; do
+	echo "$VM_NAME: stop"
+	do_stop
+	if [ $KVM ]; then
+	    # Delete its disk image backups and make new backups
+	    pushd "/var/lib/libvirt/images" >& /dev/null
+	    echo "$VM_NAME: delete old backups"
+	    rm -f "$VM_NAME*.bak"
+	    echo "$VM_NAME: make new backups"
+	    for i in "$VM_NAME*"; do
+		cp -p $i $i.bak
+	    done
+	    popd >& /dev/null
+	else
+	    # Merge its snapshot and make a new snapshot
+	    VMXFILE="$VM_DIR/$VM_NAME/$VM_NAME.vmx"
+	    echo "$VM_NAME: merge snapshot"
+	    vmrun deleteSnapshot "$VMXFILE"
+	    echo "$VM_NAME: snapshot"
+	    vmrun snapshot "$VMXFILE"
+	fi
+	# Restart it
+	echo "$VM_NAME: start"
+	do_start
+    done
+}
+
+###############################################################################
+# Main script
+###############################################################################
+
+VM_HOST_TYPE=`vm_host_type`
+if [ ! $KVM ] && [ "$USER" == "root" ]; then
+    fix_vmware_perl_api_errors
+fi
+
+###############################################################################
+# lsvm -- list all VMs
+###############################################################################
+
+if [ $CALLED_AS == "lsvm" ]; then
+    do_lsvm "$@"
+
+###############################################################################
+# mkvm -- make a VM
+###############################################################################
+
+elif [ $CALLED_AS == "mkvm" ]; then
+    do_mkvm "$@"
+
+###############################################################################
+# rebuild_stemcell -- makes a VM, boots from PXE, and creates a stemcell
+###############################################################################
+
+elif [ $CALLED_AS == "rebuild_stemcell" ]; then
+    do_rebuild_stemcell "$@"
+
+###############################################################################
+# rmvm -- delete a VM
+###############################################################################
+
+elif [ $CALLED_AS == "rmvm" ]; then
+    do_rmvm "$@"
+
+###############################################################################
+# mvvm -- change a VM's name
+###############################################################################
+
+elif [ $CALLED_AS == "mvvm" ]; then
+    do_mvvm "$@"
+
+###############################################################################
+# allvm -- run a vmware-cmd or virsh command on all VMs
+###############################################################################
+
+elif [ $CALLED_AS == "allvm" ]; then
+    do_allvm "$@"
+
+###############################################################################
+# rebuild_vmware -- smart wrapper for vmware-config.pl
+###############################################################################
+
+elif [ $CALLED_AS == "rebuild_vmware" ]; then
+    do_rebuild_vmware "$@"
+
+###############################################################################
+# vmup -- bring a VM up
+###############################################################################
+
+elif [ $CALLED_AS == "vmup" ]; then
+    do_start "$@"
+
+###############################################################################
+# vmdown -- bring a VM down
+###############################################################################
+
+elif [ $CALLED_AS == "vmdown" ]; then
+    do_stop "$@"
+
+###############################################################################
+# snapshot_all -- merge snapshots/delete backups and then re-snapshot
+###############################################################################
+
+elif [ $CALLED_AS == "snapshot_all" ]; then
+    do_snapshot_all "$@"
+
+###############################################################################
+# Unknown command -- this would be if someone ran vmtool itself sans symlink
+###############################################################################
+
+else
+    echo "Please call this script as lsvm, mkvm, mvvm, etc." > /dev/stderr
+fi

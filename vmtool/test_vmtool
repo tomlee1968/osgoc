@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# test_vmtool -- regression tests for vmtool
+# Tom Lee <thomlee@iu.edu>
+# Begun 2014-02-20
+# Last modified 2014-02-20
+
+# This is overdue; we need to be able to make sure that changes I make to
+# vmtool.pl don't break it and that it can still perform basic functions
+# without errors.  An automated test script can perform these tests with
+# precision.
+
+function test_mkvm() {
+    # Creating a VM
+    mkvm -s 256mb -p thomlee.test123
+}
+
+function test_rmvm() {
+    # Deleting a VM
+    rmvm thomlee.test123
+}
+
+###############################################################################
+# Main script
+###############################################################################
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/bin:/opt/sbin:/opt/bin
+test_mkvm
+test_rmvm

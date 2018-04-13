@@ -1,0 +1,87 @@
+#!/bin/bash
+#
+# gocvmwhosua - GOC VMware Host OS Update Assist
+#
+# chkconfig: 35 99 01
+
+# description: This script should only be installed on VM hosts, specifically
+# VMware ones, but will do nothing on servers that aren't VMware hosts.  On
+# boot, it checks to see whether VMware-server is installed and, if so, whether
+# it is running.  If it is installed but not running, the assumption is that
+# the kernel modules need to be recompiled, so it will attempt to run
+# rebuild_vmware.
+
+### BEGIN INIT INFO
+# Provides: gocvmwhosua
+# Short-Description: Recompiles VMware Server kernel modules if necessary
+# Description: This does not start a daemon; it runs at boot time to check
+#              whether the VMware Server kernel modules need recompiling (after
+#              a kernel update, for example) and, if so, does so.
+### END INIT INFO
+
+# Sanity checks.
+[ -f /usr/bin/vmware-config.pl ] || exit 0
+[ -d /etc/vmware ] || exit 0
+
+# Source function library.
+. /etc/init.d/functions
+
+RETVAL=0
+
+start () {
+    echo -n "Checking VMware: "
+    service vmware status >& /dev/null
+    RETVAL=$?
+    if [ $RETVAL -eq 0 ]; then
+	echo -n "VMware already running"
+	success
+	echo
+	return $RETVAL
+    fi
+    echo "VMware not running.  Running rebuild_vmware ..."
+    export USER=root
+    export PATH=$PATH:/opt/sbin
+    rebuild_vmware
+    RETVAL=$?
+    if [ $RETVAL -eq 0 ]; then
+	echo -n "rebuild_vmware returned OK"
+	success
+    else
+	echo -n "rebuild_vmware returned error"
+	failure
+    fi
+    echo
+    return $RETVAL
+}
+
+stop () {
+    return 0
+}
+
+restart() {
+    start
+}
+
+# See how we were called.
+case "$1" in
+    start)
+	start
+	RETVAL=$?
+	;;
+    stop)
+	stop
+	RETVAL=$?
+	;;
+    status)
+	RETVAL=0
+	;;
+    restart)
+	restart
+	RETVAL=$?
+	;;
+    *)
+	echo $"Usage: $0 {start|stop|status|restart}"
+	RETVAL=1
+	;;
+esac
+exit $RETVAL

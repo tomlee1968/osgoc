@@ -1,0 +1,34 @@
+vmtool -- GOC VM utility
+
+This is a script that does various frequently-required tasks with VMs.  The
+script is not intended to be run as 'vmtool' but rather as 'mkvm', 'lsvm',
+etc., which are symlinks that point to vmtool.  By default the script and
+symlinks are installed in /opt/sbin, and the configuration file vmtool.conf is
+in /opt/etc.
+
+The Makefile and vmtool.spec file are fairly readable, so I suggest reading
+them.  Basic things you might want to do:
+
+$ make rpm -- makes installable source and "binary" RPMs of vmtool.
+$ make clean -- deletes the tarball and any backup files left lying around.
+# make install -- installs the script and config file and makes the symlinks
+  (does not update the RPM database, so use with extreme caution)
+$ make tarball -- makes a tarball of the directory's contents.
+
+Making changes to this without knowing exactly what you're doing are not
+recommended and could lead to virtual machines being corrupted or deleted.
+Please be extremely careful.
+
+If you change vmtool and wish to "release" it to the VM servers, please
+increment the version in vmtool.spec.  Also, please make note of your changes
+in the changelog in vmtool.spec.
+
+Above all, whatever you think of RPM, please do not unilaterally decide you're
+going to stop using RPM to distribute this.  Our servers are all Redhat, which
+means that it's often useful to work within Redhat's software packaging system.
+(You can always look up the current version with "rpm -qi vmtool", for one
+thing.)  Altering and/or deleting files that are controlled by the RPM system
+can corrupt the RPM database, causing all sorts of trouble later (imagine an
+update that should have taken 5 minutes taking all day instead).  If you really
+can't stand RPM and want to install via the Makefile every time, please remove
+the RPM from the database first ("rpm -e vmtool").

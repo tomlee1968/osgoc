@@ -1,0 +1,6 @@
+version 2.8.3
+--This line, and those below, will be ignored--
+
+M    vmtool.spec
+M    vmtool.pl
+M    Makefile
