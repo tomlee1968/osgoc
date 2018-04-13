@@ -1,0 +1,361 @@
+--- 
+sib-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ce.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+reports.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+repo.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/voms.grid.iu.edu: 
+  last_status: not ok
+  last_ok: 1520963150
+  last_checked: 1523640738
+ttrack-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+sib-monitoring.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rpid-dtr.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+collector-itb.opensciencegrid.org: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rpid-handle.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+display.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+web.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+twiki.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+psds-itb1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+meshconfig-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/data2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsv-client-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+event-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+collector.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+confluence.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+repo-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/ce.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+xd-login.opensciencegrid.org: 
+  last_status: not ok
+  last_ok: 1523469031
+  last_checked: 1523640738
+voms-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/data1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+psds0.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+meshconfig.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+jira-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+munin.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+psetf.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+myosg2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+glidein.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+web-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+voms.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640495
+  last_checked: 1523640495
+ticket1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsv2-client.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/ece2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+event-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsv-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+grafana-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+pilot/osg-flock.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+imap.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+blogs-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+monitor.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+glidein-int.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+im-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+osg-xsede.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ticket2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+glideinwms/osg-flock.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+csiu.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+OSG Operations Center: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/rsv.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+grafana.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ece2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ticket-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ticket-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+swamp-ticket-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+perfsonar2.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+oasis-login-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+oasis-login.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+perfsonar-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rquick.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+jira.opensciencegrid.org: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+oim.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+reports-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+cert.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+jira-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+blogs1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+echism.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+myosg1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+thomlee.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+csiu-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+is-itb1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+myosg-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+http/voms-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+osg-flock.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+glidein-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+oim-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+meshconfig-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+display-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+swamp1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+sib.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsvprocess-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsv1.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+myosg-itb.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+rsv/ce.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+event.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+oim-dev.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+ttrack.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436
+steige.grid.iu.edu: 
+  last_status: ok
+  last_ok: 1523640436
+  last_checked: 1523640436

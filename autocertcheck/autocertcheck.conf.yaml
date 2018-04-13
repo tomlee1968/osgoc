@@ -1,0 +1,1160 @@
+# Defines certificates for the autocertcheck.rb script. Each element in this
+# sequence represents a certificate/key pair. Each pair of files is stored in a
+# standard location in two places: the certificate server and the Puppet
+# server. Puppet will take care of placing the certificate and key files on the
+# appropriate target machines with whatever file paths, user/group owners,
+# permission modes, etc. are required. The autocertcheck.rb script is just
+# concerned with:
+#
+# * testing certificates for impending expiration (or nonexistence, in the case
+# of completely new ones)
+#
+# * assisting with requesting new ones when it discovers this is necessary
+#
+# * placing the certificates and keys in the appropriate places on the Puppet
+# server and configuring Puppet to place them in their destinations
+#
+# Each element in this sequence has a mapping with these keys:
+#
+# * desc (required string): Mostly used to make this file easier to read, but
+#   also can be printed by the script to help whoever's running it know what
+#   cert it is currently dealing with.
+#
+# * type (required string): What type of certificate this is; recognized values
+#   are 'internal', 'cilogon', 'digicert' (deprecated), and 'incommon'. This
+#   just determines what steps the script follows to request/renew the
+#   certificate.
+#
+# * cn (required string): The CN appearing in the certificate's subject. This
+#   will be the hostname, in the case of a host cert, "service/hostname" in the
+#   case of a service cert, and something else in the case of a user cert
+#   (typically a username and/or email address).
+#
+# * san (optional sequence): The subjectAltNames for this certificate, which
+#   are strings of format "<type>:<value>", where <type> can be "email", "DNS",
+#   or "IP". If this appears in a host certificate, autocertcheck.rb script
+#   will automatically include the hostname from the CN by default, so there's
+#   no need to add it here. (If this 'san' field doesn't appear, this script
+#   won't add it.)
+#
+# * notify (optional sequence of strings): A sequence of Puppet resources (of
+#   form Type[name]) to set as the "notify" attribute for the Certificate
+#   resource in Puppet. In Puppet, setting resource B in the "notify" list for
+#   resource A has two effects: first, Puppet will process resource A before
+#   resource B, and second, Puppet will send resource B a refresh. A refresh
+#   has an effect only on Mount resources (causes them to be remounted),
+#   Service resources (causes them to be restarted), and Exec resources that
+#   have "refreshonly" set to true (causes them to be executed, where normally
+#   they would not be). NOTE: Any resource listed here must exist! Make sure
+#   the resource you're notifying is defined elsewhere in the Puppet rules for
+#   the target host.
+#
+# * msg (optional string): A note to be printed when this certificate is
+#   updated, usually reminding the sysadmin of something special that must be
+#   done. There are a lot of little special cases with certificates, some of
+#   which this script can't handle (some of which no script could).
+#
+# * flags (optional mapping): A mapping consisting of optional flags that can
+#   be set. They're flags, so their value is ignored; the script uses only the
+#   presence (or absence) of the key. Currently the only one defined is
+#   'usercert', which means this is the GOC user certificate, which is treated
+#   specially. Several other flags are used internally during processing, but
+#   these aren't specified in this config file.
+#
+# * targets (required sequence): Hosts and paths where Puppet is to install the
+#   certificate. These targets are mappings. Each one has several optional
+#   keys; if they are omitted, the certificate and its private key will be
+#   installed according to the Operations Center standard practice. There must
+#   be at least one "target". The keys for each mapping are:
+#
+#   - host (required string): The hostname (relative to the Puppet server) on
+#     which the certificate should be installed. Different targets can have
+#     different host settings, because in some cases the same certificate/key
+#     can be installed on different hosts. For example, the same certificate
+#     and key need to be on both repo1 and repo2, because the certificate is
+#     multi-domain, and both repo1 and repo2 appear in its SAN field.
+#
+#   - cert (optional mapping): Specifies any nondefault details about the
+#     certificate file's destination. Omitting this (or any of the details)
+#     results in Puppet's placing the cert according to Operations Center
+#     standard practices.
+#
+#   - key (optional mapping): Similar to "cert" above, only specifies details
+#     about where Puppet should install the certificate's private key file. The
+#     optional keys for the mappings of both "cert" and "key":
+#
+#     . path (optional string): The path to where in the filesystem Puppet
+#       should install the cert/key. Default:
+#       /etc/grid-security/<service>/cert.pem (or key.pem) (where <service> is
+#       "host" for a host cert or the service in the case of service certs). If
+#       "path" is set for the cert, but the key's "path" setting is a relative
+#       path, that relative path is taken to be relative to the cert's
+#       "path". For example, if the cert is at /path/to/cert.pem, and the key's
+#       "cert" setting is "key.pem", it will be installed at
+#       /path/to/key.pem. If the key's "path" setting is an absolute path, the
+#       cert's "path" setting has no effect on it.
+#
+#     . user (optional string): The user account that should own the cert/key
+#       file. Default for cert: root. Default for key: whatever the cert's
+#       "user" setting is.
+#
+#     . group (optional string): The group that should own the cert/key
+#       file. Default for cert: root. Default for key: whatever the cert's
+#       "group" setting is.
+#
+#     . mode (optional string): The permission modes for the cert/key
+#       file. Default for cert: 0644. Default for key: whatever the cert's
+#       "mode" setting is, ANDed with 0700.
+#
+# Some examples:
+#
+### This would result in the cert being written to
+### /etc/grid-security/host/cert.pem with mode 0644 and the key being written
+### to key.pem with mode 0600 in the same directory, both with user 'root' and
+### group 'root', on both foo1.goc and foo2.goc:
+# - cn: foo.grid.iu.edu
+#   type: cilogon
+#   desc: foo host cert (CILogon)
+#   targets:
+#     - host: foo1.goc
+#     - host: foo2.goc
+#
+### This would result in the cert being written to
+### /etc/grid-security/http/cert.pem with mode 0644 and the key being written
+### to key.pem with mode 0600 in the same directory, both with user 'apache'
+### and group 'root', on both bar1.goc and bar2.goc:
+# - cn: http/bar.grid.iu.edu
+#   type: cilogon
+#   desc: bar http cert (CILogon)
+#   notify:
+#     - Exec[http_condrestart]
+#   targets:
+#     - host: bar1.goc
+#       cert:
+#         user: apache
+#     - host: bar2.goc
+#       cert:
+#         user: apache
+#
+### This would result in the cert being written to
+### /funky/cert/path/certmadness.pem with mode 0765 and the key being written
+### to /funky/cert/path/madkey.pem with mode 0700, both with user 'whoever' and
+### group 'whatever', on host baz.goc:
+# - cn: baz.grid.iu.edu
+#   type: incommon
+#   desc: baz host cert (InCommon)
+#   targets:
+#     - host: baz.goc
+#       cert:
+#         path: /funky/cert/path/certmadness.pem
+#         user: whoever
+#         group: whatever
+#         mode: 0765
+#       key:
+#         path: madkey.pem
+#
+# Note that in the second example above, the Exec resource named
+# 'http_condrestart' (presumably something that does the shell command "service
+# httpd condrestart") must be defined somewhere in the Puppet rules for
+# bar.goc. Note also that it is not necessary to set "user" to "apache" for
+# http service certs (because Apache normally starts as root to read the key
+# and then drops its privileges to an unprivileged user for security purposes);
+# this is just an example.
+#
+# Never do anything like the last example above. You will live to regret it.
+#
+# A certificate's filename on the Puppet server looks like this:
+#
+# Host cert for foo.grid.iu.edu: foo.grid.iu.edu_cert.pem
+#
+# Service cert for service 'bar' on foo.grid.iu.edu: foo.grid.iu.edu_bar_cert.pem
+#
+# User cert for email 'foo@bar.org': foo_bar.org_user_cert.pem
+#
+# Key files (when they exist) have the same scheme, but with 'cert' replaced
+# with 'key'.
+
+---
+- cn: OSG Operations Center
+  type: cilogon
+  desc: GOC user certificate (CILogon)
+  flags:
+    usercert: true
+  san:
+    - email:help@opensciencegrid.org
+- cn: blogs1.grid.iu.edu
+  type: incommon
+  desc: blogs1 host cert (InCommon)
+  san:
+    - DNS:blogs.grid.iu.edu
+    - DNS:vip-blogs.grid.iu.edu
+  targets:
+    - host: blogs1.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+- cn: blogs-itb.grid.iu.edu
+  type: incommon
+  desc: blogs-itb host cert (InCommon)
+  targets:
+    - host: blogs-itb.goc
+      notify:
+        - Exec[httpd_condrestart]
+- cn: ce.grid.iu.edu
+  type: cilogon
+  desc: ce host cert (CILogon)
+  targets:
+    - host: ce.goc
+    - host: ce.goc
+      cert:
+        path: /etc/grid-security/hostcert.pem
+      key:
+        path: hostkey.pem
+    - host: ce.goc
+      cert:
+        path: /etc/grid-security/cemon/hostcert.pem
+        user: tomcat
+        group: tomcat
+      key:
+        path: hostkey.pem
+- cn: http/ce.grid.iu.edu
+  type: cilogon
+  desc: ce http cert (CILogon)
+  targets:
+    - host: ce.goc
+      cert:
+        path: /etc/grid-security/http/httpcert.pem
+      key:
+        path: httpkey.pem
+      notify:
+        - Exec[httpd_condrestart]
+- cn: rsv/ce.grid.iu.edu
+  type: cilogon
+  desc: ce rsv cert (CILogon)
+  targets:
+    - host: ce.goc
+      cert:
+        path: /etc/grid-security/rsv/rsvcert.pem
+        user: rsv
+        group: rsv
+      key:
+        path: rsvkey.pem
+- cn: cert.grid.iu.edu
+  type: cilogon
+  desc: cert host cert (CILogon)
+  targets:
+    - host: cert.goc
+# - cn: collector1.opensciencegrid.org
+#   type: cilogon
+#   desc: collector1 host cert (CILogon)
+#   targets:
+#     - host: collector1.goc
+#   requestvo: OSG
+# - cn: collector2.opensciencegrid.org
+#   type: cilogon
+#   desc: collector2 host cert (CILogon)
+#   targets:
+#     - host: collector2.goc
+#   requestvo: OSG
+- cn: collector.grid.iu.edu
+  type: cilogon
+  desc: collector host cert (CILogon)
+  targets:
+    - host: collector1.goc
+    - host: collector2.goc
+  san:
+    - DNS:collector1.grid.iu.edu
+    - DNS:collector2.grid.iu.edu
+    - DNS:vip-collector.grid.iu.edu
+    - DNS:collector.opensciencegrid.org
+    - DNS:collector1.opensciencegrid.org
+    - DNS:collector2.opensciencegrid.org
+  requestvo: OSG
+- cn: collector-itb.opensciencegrid.org
+  type: cilogon
+  desc: collector-itb host cert (CILogon)
+  targets:
+    - host: collector-itb.goc
+  requestvo: OSG
+- cn: confluence.grid.iu.edu
+  type: incommon
+  desc: confluence host cert (InCommon)
+  msg: "Confluence requires /etc/grid-security/http/confluence.keystore, a PKCS#12 file containing the cert and key, encrypted with the usual GOC password."
+  targets:
+    - host: confluence.goc
+#- cn: cpipes.grid.iu.edu
+#  type: cilogon
+#  desc: cpipes host cert (CILogon)
+#  targets:
+#    - host: cpipes.goc
+#- cn: http/cpipes.grid.iu.edu
+#  type: cilogon
+#  desc: cpipes http cert (CILogon)
+#  targets:
+#    - host: cpipes.goc
+#- cn: rsv/cpipes.grid.iu.edu
+#  type: cilogon
+#  desc: cpipes rsv cert (CILogon)
+#  targets:
+#    - host: cpipes.goc
+- cn: csiu.grid.iu.edu
+  type: cilogon
+  desc: csiu host cert (CILogon)
+  targets:
+    - host: csiu.goc
+- cn: csiu-itb.grid.iu.edu
+  type: cilogon
+  desc: csiu-itb host cert (CILogon)
+  targets:
+    - host: csiu-itb.goc
+- cn: http/data1.grid.iu.edu
+  type: cilogon
+  desc: data1 http cert (CILogon)
+  targets:
+    - host: data1.goc
+- cn: http/data2.grid.iu.edu
+  type: cilogon
+  desc: data2 http cert (CILogon)
+  targets:
+    - host: data2.goc
+- cn: display-itb.grid.iu.edu
+  type: incommon
+  desc: display-itb host cert (InCommon)
+  targets:
+    - host: display-itb.goc
+  san:
+    - DNS:display-itb.opensciencegrid.org
+- cn: display.grid.iu.edu
+  type: incommon
+  desc: display host cert (InCommon)
+  targets:
+    - host: display1.goc
+  san:
+    - DNS:display1.grid.iu.edu
+    - DNS:display2.grid.iu.edu
+    - DNS:vip-display.grid.iu.edu
+    - DNS:display.opensciencegrid.org
+- cn: ece2.grid.iu.edu
+  type: cilogon
+  desc: ece2 host cert (CILogon)
+  targets:
+    - host: ece2.goc
+    - host: ece2.goc
+      cert:
+        path: /etc/grid-security/hostcert.pem
+      key:
+        path: hostkey.pem
+- cn: http/ece2.grid.iu.edu
+  type: cilogon
+  desc: ece2 http/rsv cert (CILogon)
+  targets:
+    - host: ece2.goc
+      cert:
+        path: /etc/grid-security/http/httpcert.pem
+      key:
+        path: httpkey.pem
+      notify:
+        - Exec[httpd_condrestart]
+    - host: ece2.goc
+      cert:
+        path: /etc/grid-security/rsv/rsvcert.pem
+        user: rsv
+        group: rsv
+      key:
+        path: rsvkey.pem
+- cn: echism.grid.iu.edu
+  type: cilogon
+  desc: echism host cert (CILogon)
+  targets:
+    - host: echism.goc
+      cert:
+        path: /etc/grid-security/hostcert.pem
+      key:
+        path: hostkey.pem
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+    - host: echism.goc
+      cert:
+        path: /etc/grid-security/http/httpcert.pem
+        user: tomcat
+        group: tomcat
+      key:
+        path: httpkey.pem
+        user: tomcat
+        group: tomcat
+        mode: 0400
+    - host: echism.goc
+      cert:
+        path: /etc/grid-security/rsv/rsvcert.pem
+        user: rsv
+        group: rsv
+      key:
+        path: rsvkey.pem
+        user: rsv
+        group: rsv
+- cn: event-dev.grid.iu.edu
+  type: incommon
+  desc: event-dev host cert (InCommon)
+  targets:
+    - host: event-dev.goc
+- cn: event-itb.grid.iu.edu
+  type: incommon
+  desc: event-itb host cert (InCommon)
+  targets:
+    - host: event-itb1.goc
+    - host: event-itb2.goc
+  san:
+    - DNS:event-itb1.grid.iu.edu
+    - DNS:event-itb2.grid.iu.edu
+    - DNS:vip-event-itb.grid.iu.edu
+- cn: event.grid.iu.edu
+  type: incommon
+  desc: event host cert (InCommon)
+  targets:
+    - host: event1.goc
+    - host: event2.goc
+  san:
+    - DNS:event1.grid.iu.edu
+    - DNS:event2.grid.iu.edu
+    - DNS:vip-event.grid.iu.edu
+- cn: glidein.grid.iu.edu
+  type: cilogon
+  desc: glidein host cert (CILogon)
+  targets:
+    - host: glidein.goc
+- cn: glidein-int.grid.iu.edu
+  type: cilogon
+  desc: glidein-int host cert (CILogon)
+  targets:
+    - host: glidein-int.goc
+- cn: glidein-itb.grid.iu.edu
+  type: cilogon
+  desc: glidein-itb host cert (CILogon)
+  targets:
+    - host: glidein-itb.goc
+- cn: grafana.grid.iu.edu
+  type: incommon
+  desc: grafana host cert (InCommon)
+  targets:
+    - host: grafana.grid.iu.edu
+  san:
+    - DNS:grafana.opensciencegrid.org
+- cn: grafana-itb.grid.iu.edu
+  type: incommon
+  desc: grafana-itb host cert (InCommon)
+  targets:
+    - host: grafana-itb.grid.iu.edu
+  san:
+    - DNS:grafana-itb.opensciencegrid.org
+#- cn: gratiaweb.grid.iu.edu
+#  type: incommon
+#  desc: gratiaweb1/2 host cert (InCommon)
+#  san:
+#    - DNS:gratiaweb.opensciencegrid.org
+#  targets:
+#    - host: gratiaweb1.goc
+#    - host: gratiaweb2.goc
+- cn: imap.grid.iu.edu
+  type: incommon
+  desc: imap host cert (InCommon)
+  targets:
+    - host: imap.goc
+- cn: im-itb.grid.iu.edu
+  type: incommon
+  desc: im-itb host cert (InCommon)
+  targets:
+    - host: im-itb.goc
+- cn: is-itb1.grid.iu.edu
+  type: cilogon
+  desc: is-itb1 host cert (CILogon)
+  targets:
+    - host: is-itb1.goc
+      notify:
+        - Exec[httpd_condrestart]
+- cn: jira.opensciencegrid.org
+  type: incommon
+  desc: jira host cert (InCommon)
+  san:
+    - DNS:jira.grid.iu.edu
+  targets:
+    - host: jira.goc
+      notify:
+        - Exec[rebuild_jira_keystore]
+- cn: jira-dev.grid.iu.edu
+  type: incommon
+  desc: jira-dev host cert (InCommon)
+  san:
+    - DNS:jira-dev.grid.iu.edu
+    - DNS:jira-dev1.grid.iu.edu
+    - DNS:jira-dev2.grid.iu.edu
+    - DNS:vip-jira-dev.grid.iu.edu
+  targets:
+    - host: jira-dev1.goc
+      notify:
+        - Exec[rebuild_jira_keystore]
+    - host: jira-dev2.goc
+      notify:
+        - Exec[rebuild_jira_keystore]
+- cn: jira-itb.grid.iu.edu
+  type: incommon
+  desc: jira-itb host cert (InCommon)
+  targets:
+    - host: jira-itb.goc
+      notify:
+        - Exec[rebuild_jira_keystore]
+- cn: meshconfig-dev.grid.iu.edu
+  type: incommon
+  desc: meshconfig-dev host cert (InCommon)
+  targets:
+    - host: meshconfig-dev.goc
+- cn: meshconfig-itb.grid.iu.edu
+  type: incommon
+  desc: meshconfig-itb host cert (InCommon)
+  targets:
+    - host: meshconfig-itb.goc
+- cn: meshconfig.grid.iu.edu
+  type: incommon
+  desc: meshconfig host cert (InCommon)
+  targets:
+    - host: meshconfig.goc
+- cn: monitor.grid.iu.edu
+  type: incommon
+  desc: monitor host cert (InCommon)
+  targets:
+    - host: monitor.goc
+      notify:
+        - Exec[httpd_condrestart]
+- cn: munin.grid.iu.edu
+  type: cilogon
+  desc: munin host cert (CILogon)
+  targets:
+    - host: munin.goc
+- cn: myosg1.grid.iu.edu
+  type: incommon
+  desc: myosg1 host cert (InCommon)
+  san:
+    - DNS:my.opensciencegrid.org
+    - DNS:myosg.grid.iu.edu
+    - DNS:vip-myosg.grid.iu.edu
+  targets:
+    - host: myosg1.goc
+      cert:
+        mode: 0640
+      key:
+        mode: 0400
+    - host: myosg1.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: myosg2.grid.iu.edu
+  type: incommon
+  desc: myosg2 host cert (InCommon)
+  san:
+    - DNS:my.opensciencegrid.org
+    - DNS:myosg.grid.iu.edu
+    - DNS:vip-myosg.grid.iu.edu
+  targets:
+    - host: myosg2.goc
+      cert:
+        mode: 0640
+      key:
+        mode: 0400
+    - host: myosg2.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: myosg-dev.grid.iu.edu
+  type: incommon
+  desc: myosg-dev host cert (InCommon)
+  targets:
+    - host: myosg-dev.goc
+      cert:
+        mode: 0640
+      key:
+        mode: 0400
+    - host: myosg-dev.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: myosg-itb.grid.iu.edu
+  type: incommon
+  desc: myosg-itb host cert (InCommon)
+  targets:
+    - host: myosg-itb.goc
+      cert:
+        mode: 0640
+      key:
+        mode: 0400
+    - host: myosg-itb.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: oasis-login.grid.iu.edu
+  type: cilogon
+  desc: oasis-login host cert (CILogon)
+  targets:
+    - host: oasis-login.goc
+- cn: oasis-login-itb.grid.iu.edu
+  type: cilogon
+  desc: oasis-login-itb host cert (CILogon)
+  targets:
+    - host: oasis-login-itb.goc
+- cn: oim-dev.grid.iu.edu
+  type: incommon
+  desc: oim-dev host cert (InCommon)
+  san:
+    - DNS:oim-dev1.grid.iu.edu
+    - DNS:oim-dev2.grid.iu.edu
+    - DNS:vip-oim-dev.grid.iu.edu
+#    - DNS:oim-dev.opensciencegrid.org
+  targets:
+    - host: oim-dev.goc
+    - host: oim-dev.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: oim-itb.grid.iu.edu
+  type: incommon
+  desc: oim-itb host cert (InCommon)
+  san:
+    - DNS:oim-itb1.grid.iu.edu
+    - DNS:oim-itb2.grid.iu.edu
+    - DNS:oim-itb.opensciencegrid.org
+    - DNS:idmanager-itb.opensciencegrid.org
+    - DNS:vip-oim-itb.grid.iu.edu
+  targets:
+    - host: oim-itb.goc
+    - host: oim-itb.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: oim.grid.iu.edu
+  type: incommon
+  desc: oim host cert (InCommon)
+  san:
+    - DNS:idmanager.opensciencegrid.org
+    - DNS:oim.opensciencegrid.org
+    - DNS:vip-oim.grid.iu.edu
+  targets:
+    - host: oim.goc
+    - host: oim.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: osg-flock.grid.iu.edu
+  type: cilogon
+  desc: osg-flock host cert (CILogon)
+  targets:
+    - host: osg-flock.goc
+      cert:
+        path: /etc/grid-security/hostcert.pem
+      key:
+        path: hostkey.pem
+- cn: glideinwms/osg-flock.grid.iu.edu
+  type: cilogon
+  desc: osg-flock glideinwms cert (CILogon)
+  targets:
+    - host: osg-flock.goc
+      cert:
+        path: /etc/grid-security/glideinwms/glideinwmscert.pem
+      key:
+        path: glideinwmskey.pem
+    - host: osg-flock.goc
+      cert:
+        path: /etc/grid-security/requests/glideinwmscert.pem
+      key:
+        path: glideinwmskey.pem
+- cn: pilot/osg-flock.grid.iu.edu
+  type: cilogon
+  desc: osg-flock pilot cert (CILogon)
+  targets:
+    - host: osg-flock.goc
+      cert:
+        path: /etc/grid-security/pilot/pilotcert.pem
+        user: frontend
+        group: frontend
+      key:
+        path: pilotkey.pem
+    - host: osg-flock.goc
+      cert:
+        path: /etc/grid-security/requests/pilotcert.pem
+      key:
+        path: pilotkey.pem
+- cn: perfsonar-itb.grid.iu.edu
+  type: incommon
+  desc: perfsonar-itb host cert (InCommon)
+  targets:
+    - host: perfsonar-itb.goc
+- cn: perfsonar2.grid.iu.edu
+  type: incommon
+  desc: perfsonar2 host cert (InCommon)
+  san:
+    - DNS:perfsonar.grid.iu.edu
+    - DNS:vip-perfsonar.grid.iu.edu
+    - DNS:psomd.grid.iu.edu
+    - DNS:psmad.grid.iu.edu
+  targets:
+    - host: perfsonar2.goc
+- cn: psds0.grid.iu.edu
+  type: cilogon
+  desc: psds0 host cert (CILogon)
+  targets:
+    - host: psds0.goc
+- cn: psetf.grid.iu.edu
+  type: cilogon
+  desc: psetf host cert (CILogon)
+  targets:
+    - host: psetf.goc
+- cn: psds-itb1.grid.iu.edu
+  type: cilogon
+  desc: psds-itb1 host cert (CILogon)
+  targets:
+    - host: psds-itb1.goc
+# Not distributed by Puppet -- maybe find a way to handle that
+#- cn: radioflyer.uits.indiana.edu
+#  type: incommon
+#  desc: radioflyer host cert (InCommon)
+#  targets:
+#    - host: radioflyer.goc
+- cn: repo-itb.grid.iu.edu
+  type: incommon
+  desc: repo-itb host cert (InCommon)
+  targets:
+    - host: repo-itb.goc
+      notify:
+        - Exec[httpd_condrestart]
+- cn: repo.grid.iu.edu
+  type: incommon
+  desc: repo host cert (InCommon)
+  san:
+    - DNS:repo1.grid.iu.edu
+    - DNS:repo2.grid.iu.edu
+    - DNS:repo.opensciencegrid.org
+    - DNS:vip-repo.grid.iu.edu
+    - DNS:software.grid.iu.edu
+    - DNS:software1.grid.iu.edu
+    - DNS:software2.grid.iu.edu
+    - DNS:software.opensciencegrid.org
+    - DNS:vip-software.grid.iu.edu
+    - DNS:vip-yum.grid.iu.edu
+    - DNS:yum.grid.iu.edu
+    - DNS:yum1.grid.iu.edu
+    - DNS:yum2.grid.iu.edu
+  targets:
+    - host: repo1.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+    - host: repo2.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: reports.grid.iu.edu
+  type: cilogon
+  desc: reports host cert (CILogon)
+  targets:
+    - host: reports.goc
+- cn: reports-itb.grid.iu.edu
+  type: cilogon
+  desc: reports-itb host cert (CILogon)
+  targets:
+    - host: reports-itb.goc
+- cn: rpid-dtr.grid.iu.edu
+  type: incommon
+  desc: rpid-dtr host cert (Incommon)
+  targets:
+    - host: rpid-dtr.grid.iu.edu
+- cn: rpid-handle.grid.iu.edu
+  type: incommon
+  desc: rpid-handle host cert (Incommon)
+  targets:
+    - host: rpid-handle.grid.iu.edu
+- cn: rquick.grid.iu.edu
+  type: cilogon
+  desc: rquick host cert (CILogon)
+  targets:
+    - host: rquick.goc
+- cn: http/rsv.grid.iu.edu
+  type: cilogon
+  desc: rsv http cert (CILogon)
+  targets:
+    - host: rsv.goc
+      cert:
+        path: cilogon-cert.pem
+        user: daemon
+        group: daemon
+      key:
+        path: cilogon-key.pem
+        user: daemon
+        group: daemon
+      notify:
+        - Exec[httpd_condrestart]
+- cn: rsv-client-itb.grid.iu.edu
+  type: cilogon
+  desc: rsv-client-itb host cert (CILogon)
+  targets:
+    - host: rsv-client-itb.goc
+    - host: rsv-client-itb.goc
+      cert:
+        path: /etc/grid-security/rsv/cert.pem
+- cn: rsv-itb.grid.iu.edu
+  type: cilogon
+  desc: rsv-itb host cert (CILogon)
+  targets:
+    - host: rsv-itb.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: tomcat
+        group: tomcat
+      notify:
+        - Exec[httpd_condrestart]
+- cn: rsv1.grid.iu.edu
+  type: cilogon
+  desc: rsv1 host cert (CILogon)
+  targets:
+    - host: rsv1.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: tomcat
+        group: tomcat
+      notify:
+        - Exec[httpd_condrestart]
+- cn: rsv2-client.grid.iu.edu
+  type: cilogon
+  desc: rsv2-client host cert (CILogon)
+  targets:
+    - host: rsv2-client.goc
+- cn: rsvprocess-itb.grid.iu.edu
+  type: cilogon
+  desc: rsvprocess-itb host cert (CILogon)
+  targets:
+    - host: rsvprocess-itb.goc
+- cn: sib.grid.iu.edu
+  type: incommon
+  desc: sib host cert (InCommon)
+  targets:
+    - host: sib.goc
+- cn: sib-itb.grid.iu.edu
+  type: incommon
+  desc: sib-itb host cert (InCommon)
+  targets:
+    - host: sib-itb.goc
+- cn: sib-monitoring.grid.iu.edu
+  type: incommon
+  desc: sib-monitoring host cert (InCommon)
+  targets:
+    - host: sib-monitoring.goc
+#- cn: software-itb.grid.iu.edu
+#  type: incommon
+#  desc: software-itb host cert (InCommon)
+#  targets:
+#    - host: software-itb.goc
+#      cert:
+#        path: /etc/grid-security/http/cert.pem
+#        user: apache
+#        group: apache
+#        mode: 0664
+#      key:
+#        mode: 0660
+#      notify:
+#        - Exec[httpd_condrestart]
+#- cn: soichi6.grid.iu.edu
+#  type: cilogon
+#  desc: soichi6 host cert (CILogon)
+#  targets:
+#    - host: soichi6.goc
+#    - host: soichi6.goc
+#      cert:
+#        path: /etc/grid-security/hostcert.pem
+#      key:
+#        path: hostkey.pem
+#- cn: soichi6.grid.iu.edu
+#  type: incommon
+#  desc: soichi6 host cert (InCommon)
+#  targets:
+#    - host: soichi6.goc
+#      cert:
+#        path: /etc/grid-security/http/cert.pem
+#        user: apache
+#      notify:
+#        - Exec[httpd_condrestart]
+- cn: steige.grid.iu.edu
+  type: cilogon
+  desc: steige host cert (CILogon)
+  targets:
+    - host: steige.goc
+- cn: swamp1.grid.iu.edu
+  type: cilogon
+  desc: swamp1 host cert (CILogon)
+  targets:
+    - host: swamp1.goc
+- cn: swamp-ticket-dev.grid.iu.edu
+  type: cilogon
+  desc: swamp-ticket-dev host cert (CILogon)
+  targets:
+    - host: swamp-ticket-dev.goc
+- cn: thomlee.grid.iu.edu
+  type: incommon
+  desc: thomlee host cert (InCommon)
+  targets:
+    - host: thomlee.goc
+- cn: ticket1.grid.iu.edu
+  type: incommon
+  desc: ticket1 host cert (InCommon)
+  san:
+    - DNS:ticket.grid.iu.edu
+    - DNS:ticket.opensciencegrid.org
+    - DNS:vip-ticket.grid.iu.edu
+  targets:
+    - host: ticket1.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: ticket2.grid.iu.edu
+  type: incommon
+  desc: ticket2 host cert (InCommon)
+  san:
+    - DNS:ticket.grid.iu.edu
+    - DNS:ticket.opensciencegrid.org
+    - DNS:vip-ticket.grid.iu.edu
+  targets:
+    - host: ticket2.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: ticket-dev.grid.iu.edu
+  type: incommon
+  desc: ticket-dev host cert (InCommon)
+  targets:
+    - host: ticket-dev.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: ticket-itb.grid.iu.edu
+  type: incommon
+  desc: ticket-itb host cert (InCommon)
+  targets:
+    - host: ticket-itb.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: apache
+        group: apache
+        mode: 0640
+      key:
+        mode: 0400
+      notify:
+        - Exec[httpd_condrestart]
+- cn: ttrack-itb.grid.iu.edu
+  type: incommon
+  desc: ttrack-itb host cert (InCommon)
+  targets:
+    - host: ttrack-itb.goc
+- cn: ttrack.grid.iu.edu
+  type: incommon
+  desc: ttrack host cert (InCommon)
+  targets:
+    - host: ttrack.goc
+- cn: twiki.grid.iu.edu
+  type: incommon
+  desc: twiki host cert (InCommon)
+  san:
+    - DNS:opensciencegrid.org
+    - DNS:twiki.opensciencegrid.org
+    - DNS:www.opensciencegrid.org
+  targets:
+    - host: twiki.goc
+      cert:
+        path: /etc/grid-security/http/cert.pem
+        user: root
+        group: root
+      notify:
+        - Exec[httpd_condrestart]
+#- cn: twiki-itb.grid.iu.edu
+#  type: incommon
+#  desc: twiki-itb host cert (InCommon)
+#  san:
+#    - DNS:twiki-itb.opensciencegrid.org
+#  targets:
+#    - host: twiki-itb.goc
+#      cert:
+#        path: /etc/grid-security/http/cert.pem
+#        user: root
+#        group: root
+#      notify:
+#        - Exec[httpd_condrestart]
+- cn: voms.grid.iu.edu
+  type: cilogon
+  desc: voms host cert (CILogon)
+  san:
+    - DNS:voms.opensciencegrid.org
+    - DNS:voms1.opensciencegrid.org
+    - DNS:voms2.opensciencegrid.org
+  targets:
+    - host: voms.goc
+    - host: voms.goc
+      cert:
+        path: /etc/grid-security/voms/vomscert.pem
+        user: voms
+        group: voms
+      key:
+        path: vomskey.pem
+- cn: http/voms.grid.iu.edu
+  type: cilogon
+  desc: voms http cert (CILogon)
+  san:
+    - DNS:voms.opensciencegrid.org
+    - DNS:voms1.opensciencegrid.org
+    - DNS:voms2.opensciencegrid.org
+  targets:
+    - host: voms.goc
+      cert:
+        user: tomcat
+        group: tomcat
+- cn: voms-itb.grid.iu.edu
+  type: cilogon
+  desc: voms-itb host cert (CILogon)
+  targets:
+    - host: voms-itb.goc
+    - host: voms-itb.goc
+      cert:
+        path: /etc/grid-security/voms/vomscert.pem
+        user: voms
+        group: voms
+      key:
+        path: vomskey.pem
+- cn: http/voms-itb.grid.iu.edu
+  type: cilogon
+  desc: voms-itb http cert (CILogon)
+  targets:
+    - host: voms-itb.goc
+      cert:
+        user: tomcat
+        group: tomcat
+- cn: web-itb.grid.iu.edu
+  type: incommon
+  desc: web-itb host cert (InCommon)
+  san:
+    - DNS:web-itb.grid.iu.edu
+    - DNS:www-itb.opensciencegrid.org
+    - DNS:bosco-itb.opensciencegrid.org
+  targets:
+    - host: web-itb.goc
+      cert:
+        user: root
+        group: root
+      notify:
+        - Exec[httpd_condrestart]
+- cn: web.grid.iu.edu
+  type: incommon
+  desc: web host cert (InCommon)
+  san:
+    - DNS:web1.grid.iu.edu
+    - DNS:web2.grid.iu.edu
+    - DNS:vip-web.grid.iu.edu
+    - DNS:www.opensciencegrid.org
+    - DNS:opensciencegrid.org
+    - DNS:bosco.opensciencegrid.org
+  targets:
+    - host: web1.goc
+      cert:
+        user: apache
+        group: apache
+      notify:
+        - Exec[httpd_condrestart]
+    - host: web2.goc
+      cert:
+        user: apache
+        group: apache
+      notify:
+        - Exec[httpd_condrestart]
+- cn: xd-login.opensciencegrid.org
+  type: cilogon
+  desc: xd-login host cert (CILogon)
+  san:
+    - DNS:submit-1.osg.xsede.org
+  targets:
+    - host: xd-login.goc
+  requestvo: OSG
+- cn: osg-xsede.grid.iu.edu
+  type: cilogon
+  desc: xd-login containercert (CILogon)
+  targets:
+    - host: xd-login.goc
+      cert:
+        path: /etc/grid-security/containercert.pem
+        user: globus
+        group: globus
+      key:
+        path: containerkey.pem
