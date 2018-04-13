@@ -1,5 +1,0 @@
----
-hiera::exec:
-  httpd_condrestart:
-    command: /sbin/service httpd condrestart
-    refreshonly: true

@@ -1,1 +1,0 @@
-printf "\033k%s\033\\" "${HOSTNAME%%.*}"

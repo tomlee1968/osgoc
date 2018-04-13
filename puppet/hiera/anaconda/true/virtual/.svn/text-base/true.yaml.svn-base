@@ -1,6 +1,0 @@
-# Rules for installing virtual machines
----
-hiera::service:
-  # Disable the 'ipmi' service (hardware monitoring) -- no need on VMs
-  ipmi:
-    enable: false

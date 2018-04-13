@@ -1,5 +1,0 @@
----
-hiera::certificate:
-  'help@opensciencegrid.org':
-    key:
-      group: tomcat

@@ -1,3 +1,0 @@
-# /etc/logwatch/conf/services/iptables.conf
-# Look up IP addresses
-\$iptables_ip_lookup = Yes

@@ -1,8 +1,0 @@
-Defaults:%goc	!requiretty
-Defaults:%sudo-<%= goc_accesshost %>	!requiretty
-
-User_Alias	ADMINS = thomlee
-
-%sudoers	ALL=(ALL)	ALL
-%sudo-<%= goc_accesshost %>		ALL=(ALL)	ALL
-ADMINS		ALL=(ALL)	NOPASSWD: ALL

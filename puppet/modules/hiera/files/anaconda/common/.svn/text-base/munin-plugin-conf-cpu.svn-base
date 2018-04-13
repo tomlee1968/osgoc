@@ -1,3 +1,0 @@
-[cpu]
-  env.system_warning 400
-  env.system_critical 450
