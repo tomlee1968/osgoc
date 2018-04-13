@@ -1,0 +1,755 @@
+---
+backup2:
+  day: itb
+  vmhost: huey
+  distro: '5'
+  skip: other
+blogs-itb:
+  day: itb
+  vmhost: _ii
+blogs1:
+  day: prod
+  vmhost: ginrummy
+  distro: '5'
+  skip: rhel5
+bundy:
+  day: prod
+  vmhost: _phys
+  group: group1
+  skip: dead
+  i386: true
+bushido:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+caesar:
+  day: int
+  skip: device
+cassandra-itb1:
+  day: itb
+  vmhost: kfcflu
+cassandra-itb2:
+  day: itb
+  vmhost: ribbon
+cassandra1:
+  day: itb
+  vmhost: bushido
+cassandra2:
+  day: itb
+  vmhost: bushido
+cassandra3:
+  day: itb
+  vmhost: bushido
+catcher:
+  day: itb
+  vmhost: _phys
+ce:
+  day: itb
+  vmhost: cookie
+  distro: '5'
+  skip: rhel5
+cert:
+  day: int
+  vmhost: jericho
+  distro: '5'
+  skip: rhel5
+cindy:
+  day: int
+  vmhost: _phys
+  is_vmhost: kvm
+cobbler:
+  day: int
+  vmhost: jericho
+collab:
+  day: itb
+  vmhost: ginrummy
+collector-itb:
+  day: itb
+  vmhost: grandad
+collector1:
+  day: prod
+  vmhost: cookie
+collector2:
+  day: prod
+  vmhost: ginrummy
+confluence:
+  day: prod
+  vmhost: dorothy
+  distro: '5'
+  skip: rhel5
+cookie:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group1
+cotarget:
+  day: prod
+  vmhost: lando
+  skip: dead
+crlsync:
+  day: int
+  vmhost: ginrummy
+csiu-itb:
+  day: itb
+  vmhost: ribbon
+dahmer:
+  day: prod
+  vmhost: _phys
+  distro: '5'
+  skip: rhel5
+  i386: true
+data-itb:
+  day: itb
+  vmhost: lando
+data1:
+  day: prod
+  vmhost: dorothy
+data2:
+  day: prod
+  vmhost: flagee
+db1:
+  day: itb
+  vmhost: otis
+  skip: dead
+db2:
+  day: itb
+  vmhost: jericho
+display-itb:
+  day: itb
+  vmhost: jericho
+display1:
+  day: prod
+  vmhost: cookie
+display2:
+  day: prod
+  vmhost: jericho
+dorothy:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group1
+ds2:
+  day: int
+  vmhost: jericho
+dtr-dev:
+  day: itb
+  vmhost: grandad
+dubois:
+  day: prod
+  vmhost: _phys
+ece2:
+  day: itb
+  vmhost: freeman
+  distro: '5'
+  skip: rhel5 deadhost
+  staff: true
+ece3:
+  day: itb
+  vmhost: freeman
+  skip: deadhost
+  staff: true
+echism:
+  day: itb
+  vmhost: freeman
+  distro: '5'
+  skip: rhel5 deadhost
+  staff: true
+etchasketch:
+  skip: macos
+event-dev:
+  day: itb
+  vmhost: kfcflu
+event-itb:
+  day: itb
+  vmhost: kfcflu
+event1:
+  day: prod
+  vmhost: foodcoma
+event2:
+  day: prod
+  vmhost: rudlin
+external:
+  day: int
+  vmhost: jericho
+flagee:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group2
+flonominal:
+  day: prod
+  skip: device
+  nas: true
+foodcoma:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group1
+freeman:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+  skip: dead
+funafuti:
+  day: prod
+  vmhost: _phys
+  distro: '5'
+  skip: rhel5
+fw:
+  day: int
+  vmhost: jericho
+ginrummy:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group2
+glidein-int:
+  day: itb
+  vmhost: ribbon
+glow-gfactory:
+  day: prod
+  vmhost: kfcflu
+  skip: dead
+goodlove:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+gpetto:
+  day: int
+  skip: device
+grafana:
+  day: prod
+  vmhost: jericho
+grafana-itb:
+  day: itb
+  vmhost: unknown
+  skip: new
+grandad:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+gums:
+  day: prod
+  skip: other
+handle-dev:
+  day: itb
+  vmhost: grandad
+handle-itb:
+  day: itb
+  vmhost: grandad
+huey:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+icinga-dev:
+  day: itb
+  vmhost: ribbon
+idp-itb:
+  day: itb
+  vmhost: ribbon
+im-itb:
+  day: itb
+  vmhost: lando
+imap:
+  day: prod
+  vmhost: foodcoma
+interjection:
+  skip: util
+internal:
+  day: itb
+  vmhost: huey
+is-itb1:
+  skip: dead
+jazmine:
+  vmhost: _phys
+  skip: other
+jericho:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group2
+jira:
+  day: prod
+  vmhost: ginrummy
+jira-dev1:
+  day: itb
+  vmhost: ribbon
+jira-dev2:
+  day: itb
+  vmhost: ribbon
+jira-itb:
+  day: itb
+  vmhost: ribbon
+  skip: dead
+jump:
+  day: int
+  vmhost: jericho
+  jumphost: true
+jump2:
+  day: itb
+  vmhost: huey
+  jumphost: true
+kagross:
+  day: itb
+  vmhost: goodlove
+  staff: true
+kfcflu:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+lando:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+lvs-itb1:
+  day: itb
+  vmhost: grandad
+  lvs: true
+lvs-itb2:
+  day: itb
+  vmhost: goodlove
+  lvs: true
+lvs1:
+  day: prod
+  vmhost: cookie
+  lvs: true
+lvs2:
+  day: prod
+  vmhost: jericho
+  lvs: true
+meshconfig:
+  day: itb
+  vmhost: bushido
+meshconfig-dev:
+  day: itb
+  vmhost: ribbon
+  skip: dead
+meshconfig-itb:
+  day: itb
+  vmhost: ribbon
+monitor:
+  day: int
+  vmhost: jericho
+  distro: '5'
+  skip: rhel5
+monitor-itb:
+  day: itb
+  vmhost: kfcflu
+munin:
+  day: int
+  vmhost: jericho
+mvkrenz:
+  day: itb
+  vmhost: goodlove
+myosg-dev:
+  day: itb
+  vmhost: goodlove
+myosg-itb:
+  day: itb
+  vmhost: lando
+myosg1:
+  day: prod
+  vmhost: cookie
+myosg2:
+  day: prod
+  vmhost: jericho
+nui:
+  vmhost: _phys
+  skip: other
+nukufetau:
+  day: prod
+  vmhost: _phys
+oasis:
+  day: prod
+  vmhost: otis
+oasis-itb:
+  day: itb
+  vmhost: otis
+oasis-login:
+  day: prod
+  vmhost: otis
+oasis-login-itb:
+  day: itb
+  vmhost: otis
+oasis-replica:
+  day: prod
+  vmhost: otis
+oasis-replica-itb:
+  day: itb
+  vmhost: otis
+oasis2-test:
+  day: itb
+  vmhost: lando
+  skip: dead
+oim:
+  day: prod
+  vmhost: foodcoma
+oim-dev1:
+  day: itb
+  vmhost: ribbon
+oim-dev2:
+  day: itb
+  vmhost: ribbon
+  skip: dead
+oim-itb:
+  day: itb
+  vmhost: ribbon
+old-redirector-itb:
+  day: itb
+  vmhost: grandad
+  skip: dead
+osg-flock:
+  day: prod
+  vmhost: _phys
+otis:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group2
+perfsonar-bw:
+  day: itb
+  vmhost: lando
+perfsonar-itb:
+  day: itb
+  vmhost: kfcflu
+  skip: dead
+perfsonar-lt:
+  day: itb
+  vmhost: goodlove
+perfsonar1:
+  day: itb
+  vmhost: dorothy
+  skip: dead
+perfsonar2:
+  day: itb
+  vmhost: flagee
+psds-itb1:
+  day: itb
+  vmhost: ruckus
+psds-itb2:
+  day: itb
+  vmhost: goodlove
+psds0:
+  day: itb
+  vmhost: bushido
+psds1:
+  day: itb
+  vmhost: bushido
+psds2:
+  day: itb
+  vmhost: bushido
+psetf:
+  day: itb
+  vmhost: bushido
+psrsv:
+  day: itb
+  vmhost: bushido
+puppet:
+  day: int
+  vmhost: jericho
+puppet-test:
+  day: itb
+  vmhost: woodcrest
+radioflyer:
+  skip: fedora
+redirector-itb1:
+  day: itb
+  vmhost: grandad
+redirector-itb2:
+  day: itb
+  vmhost: goodlove
+redirector1:
+  day: prod
+  vmhost: dorothy
+redirector2:
+  day: prod
+  vmhost: flagee
+repo-itb:
+  day: itb
+  vmhost: jericho
+repo1:
+  day: prod
+  vmhost: cookie
+repo2:
+  day: prod
+  vmhost: jericho
+reports:
+  day: int
+  vmhost: jericho
+  skip: dead
+ribbon:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+riley:
+  day: prod
+  vmhost: _phys
+  group: group2
+rquick:
+  day: itb
+  vmhost: freeman
+  skip: deadhost
+  staff: true
+rsv-client-itb:
+  day: itb
+  vmhost: goodlove
+  distro: '5'
+  skip: rhel5
+rsv-itb:
+  day: itb
+  vmhost: lando
+rsv1:
+  day: prod
+  vmhost: cookie
+rsv2-client:
+  vmhost: jericho
+  skip: dead
+rsvprocess-itb:
+  day: itb
+  vmhost: grandad
+rsvprocess1:
+  day: prod
+  vmhost: cookie
+rsvprocess2:
+  day: prod
+  vmhost: jericho
+ruckus:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group1
+rudlin:
+  day: prod
+  vmhost: _phys
+  is_vmhost: kvm
+  group: group2
+schmiecs2:
+  day: itb
+  vmhost: woodcrest
+  skip: deadhost
+  staff: true
+sib-itb:
+  day: itb
+  vmhost: _phys
+sib-monitoring:
+  day: prod
+  vmhost: unknown
+  skip: new
+software-itb:
+  day: itb
+  vmhost: lando
+  distro: '5'
+  skip: dead
+software1:
+  day: prod
+  vmhost: cookie
+  distro: '5'
+  skip: dead
+software2:
+  day: prod
+  vmhost: jericho
+  distro: '5'
+  skip: dead
+soichi:
+  day: itb
+  skip: dead
+  staff: true
+soichi6:
+  day: itb
+  skip: other
+  staff: true
+splinterx:
+  day: itb
+  skip: dead
+sso:
+  day: prod
+  vmhost: ginrummy
+steige:
+  day: itb
+  vmhost: goodlove
+  staff: true
+stemcell:
+  skip: util
+swamp-ticket:
+  day: prod
+  vmhost: foodcoma
+swamp-ticket-dev:
+  day: itb
+  vmhost: ribbon
+swamp1:
+  day: prod
+  vmhost: foodcoma
+swamp2:
+  day: prod
+  vmhost: foodcoma
+syslog:
+  day: int
+  vmhost: ginrummy
+  distro: '5'
+  skip: rhel5
+thomlee:
+  day: itb
+  vmhost: woodcrest
+thomlee1:
+  day: itb
+  vmhost: woodcrest
+thomlee2:
+  day: itb
+  vmhost: woodcrest
+thugnificent:
+  day: itb
+  vmhost: _phys
+ticket-dev:
+  day: itb
+  vmhost: lando
+ticket-itb:
+  day: itb
+  vmhost: goodlove
+ticket1:
+  day: prod
+  vmhost: foodcoma
+ticket2:
+  day: prod
+  vmhost: rudlin
+tricycle:
+  day: int
+  skip: updatetest not yet implemented
+  updatetest: true
+ttrack:
+  day: prod
+  skip: other
+ttrack-itb:
+  day: itb
+  vmhost: lando
+twiki:
+  day: prod
+  vmhost: ginrummy
+  skip: dead
+twiki-itb:
+  day: itb
+  vmhost: grandad
+  skip: dead
+tx-dev:
+  day: itb
+  vmhost: lando
+  skip: other
+tx-itb1:
+  day: itb
+  vmhost: grandad
+tx1:
+  day: prod
+  vmhost: foodcoma
+tx2:
+  day: prod
+  vmhost: rudlin
+vanheusen:
+  day: prod
+  vmhost: _phys
+vc:
+  day: int
+  vmhost: ginrummy
+vip-blogs:
+  skip: vip
+vip-cassandra:
+  skip: vip
+vip-display:
+  skip: vip
+vip-event:
+  skip: vip
+vip-gratiaweb:
+  skip: vip
+vip-idp:
+  skip: vip
+vip-is:
+  skip: vip
+vip-is-itb:
+  skip: vip
+vip-myosg:
+  skip: vip
+vip-oim:
+  skip: vip
+vip-pfcollector:
+  skip: vip
+vip-pfdatastore:
+  skip: vip
+vip-repo:
+  skip: vip
+vip-rsv:
+  skip: vip
+vip-software:
+  skip: vip
+vip-ticket:
+  skip: vip
+vip-twiki:
+  skip: vip
+vip-tx:
+  skip: vip
+vip-tx-itb:
+  skip: vip
+vip-web:
+  skip: vip
+voms:
+  day: prod
+  vmhost: jericho
+voms-itb:
+  day: itb
+  vmhost: kfcflu
+vpn:
+  day: int
+  vmhost: jericho
+  vpnserver: true
+web-itb:
+  day: itb
+  vmhost: grandad
+web1:
+  day: prod
+  vmhost: foodcoma
+web2:
+  day: prod
+  vmhost: rudlin
+winston:
+  day: prod
+  vmhost: _phys
+wn1:
+  day: prod
+  vmhost: grandad
+wn2:
+  day: prod
+  vmhost: grandad
+wn3:
+  day: prod
+  vmhost: kfcflu
+  skip: other
+woodcrest:
+  day: itb
+  vmhost: _phys
+  is_vmhost: kvm
+wuncler:
+  day: prod
+  vmhost: _phys
+yum-internal:
+  vmhost: jericho
+  skip: alias
+  yum_internal: true
+yum-internal-6:
+  day: int
+  vmhost: jericho
+  yum_internal: true
+yum-internal-c6:
+  day: int
+  vmhost: jericho
+  yum_internal: true
+yum-internal-c7:
+  day: int
+  vmhost: jericho
+  distro: c7
+  yum_internal: true
+yum-itb:
+  day: itb
+  skip: alias
+yum1:
+  day: prod
+  skip: alias
+yum2:
+  day: prod
+  skip: alias
