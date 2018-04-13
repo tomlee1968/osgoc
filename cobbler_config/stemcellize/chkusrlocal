@@ -1,0 +1,143 @@
+#!/bin/bash
+
+# chkusrlocal -- VMware kludge by Tom Lee <thomlee@iu.edu>
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/opt/sbin:/opt/bin
+
+# The disk on which we put /usr/local on a VM (either /dev/hdb or
+# /dev/sdb) is made by the mkvm script running on the VM host, but on
+# a VMware Server 1.x host, mkvm cannot create a partition or
+# filesystem on it from outside the guest OS, so we have to do all
+# that here.  But only do this if the disk doesn't seem to have any
+# partitions on it at all -- if it's got any partitions on it already,
+# don't wipe them out.
+
+# Note that KVM hosts can in fact create partitions and filesystems on
+# virtual disk images from outside the guest OS, so this script is
+# unnecessary for KVM hosts.
+
+# This script should be run by an initscript as early as possible
+# after the filesystems (other than /usr/local) are mounted
+# read-write.  Anaconda should be configured to set /usr/local to
+# "noauto" in the /etc/fstab it generates, so the system won't attempt
+# to mount /usr/local on first boot (which causes it to ask for the
+# root password on the console so the user can fix the problem and
+# reboot; this is undesirable).  This script will remove the "noauto"
+# from /usr/local in /etc/fstab once it is satisfied that there's a
+# partition and filesystem there.
+
+# TJL 2009/09/30
+# Last modified 2012/10/24
+
+function log() {
+  local msg="$1"
+  if [[ -x /bin/logger ]]; then
+    logger -s -t chkusrlocal "$msg"
+  else
+    echo "$msg" > /dev/stderr
+  fi
+}
+
+# Check for a mounted /usr/local.  If it's already mounted, there's
+# nothing this script needs to do.
+if grep -Eq '^[^[:space:]]+[[:space:]]+/usr/local[[:space:]]' /proc/mounts; then
+    log "/usr/local already mounted; all is well"
+    exit 0
+else
+    log "/usr/local not mounted; investigating"
+fi
+
+# On RHEL5 and earlier, IDE hard drives appear as /dev/hd*, while SCSI
+# drives show up as /dev/sd*.  On RHEL6 and later, however, there is
+# no /dev/hd*.  All hard drives are /dev/sd*, even IDE drives.
+if [[ -e /dev/hdb ]]; then
+    DISK=/dev/hdb
+elif [[ -e /dev/sdb ]]; then
+    DISK=/dev/sdb
+else
+    log "No /dev/hdb or /dev/sdb found"
+    exit 0
+fi
+
+# Check to see whether there is a /dev/hdb1 or sdb1.
+PART="${DISK}1"
+log "Checking for $PART"
+if [[ -e "$PART" ]]; then
+    log "$PART present; continuing ..."
+else
+    log "$PART not present; partitioning $DISK ..."
+    # Call sfdisk to partition the drive.
+    echo ",,L" | sfdisk "$DISK"
+    DID_PARTITION=1
+fi
+
+# Check to see whether there's a filesystem on $PART.
+MTPT=`mktemp -d /mnt/chkusrlocal.XXXXXXXXXX`
+log "Checking for filesystem on $PART ..."
+if mount -t auto "$PART" "$MTPT" >& /dev/null; then
+    log "$PART has mountable filesystem; continuing ..."
+    umount "$MTPT"
+else
+    log "No mountable filesystem on $PART; creating one ..."
+    # See if /etc/fstab wants /usr/local to be ext3 or ext4.
+    FS=`sed -re '/\/usr\/local[[:space:]]/!d' -e 's/^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+([^[:space:]]+).*$/\1/' /etc/fstab`
+    # Make the filesystem.
+    mkfs -t $FS -L /usr/local "$PART"
+
+    # In RHEL 6, Anaconda gives the /usr/local filesystem a UUID when
+    # it builds the stemcell and then sets up /etc/fstab to mount all
+    # the physical partitions by UUID, not by label or device file.
+    # This is a problem, because of course the disk containing
+    # /usr/local's partition is only a placeholder during stemcell
+    # rebuilding.  The disk present by the time this script runs is a
+    # totally new disk and won't have the UUID.  However, we can look
+    # at /etc/fstab, get the UUID, and assign it to the newly-created
+    # /usr/local filesystem, and then everything will work.
+    if grep -Eq '^[[:space:]]*UUID=[[:xdigit:]-]+[[:space:]]+/usr/local[[:space:]]' /etc/fstab; then
+	uuid=`grep -Eo '^[[:space:]]*UUID=[[:xdigit:]-]+[[:space:]]+/usr/local[[:space:]]' /etc/fstab | sed -re 's/^[[:space:]]*UUID=([[:xdigit:]-]+)[[:space:]].*/\1/'`
+	tune2fs -U "$uuid" "$PART"
+    fi
+    DID_MKFS=1
+fi
+rmdir "$MTPT"
+
+# Check /etc/fstab.
+log "Examining /etc/fstab ..."
+if grep -Eq '[[:space:]]/usr/local[[:space:]]' /etc/fstab; then
+    log "/usr/local found in /etc/fstab."
+    # So why isn't it mounted already?  Possibly it is set "noauto".
+    if grep -Eq '[[:space:]]/usr/local[[:space:]]+[^[:space:]]+[[:space:]]+([^[:space:]]+,)?noauto[[:space:],]' /etc/fstab; then
+	log "But it is set 'noauto' (is this the first boot?).  Fixing ..."
+	# Remove the 'noauto'.
+	sed -i -re 's!([[:space:]]/usr/local[[:space:]]+[^[:space:]]+[[:space:]]+)([^[:space:]]+,)?noauto(,([^[:space:]]+))?!\1\2\4!' -e 's/,([[:space:]])/\1/' /etc/fstab
+    else
+	# If this script just created a partition or filesystem, it's
+	# obvious why /usr/local isn't mounted already.  But
+	# otherwise, it's odd that it isn't mounted.
+	if [[ ! $DID_PARTITION && ! $DID_MKFS ]]; then
+	    log "Unclear why /usr/local is not already mounted."
+	fi
+    fi
+else
+    # Somehow there is no record for /usr/local in /etc/fstab.  I
+    # don't know how this would happen, but fix it.
+    log "No record for /usr/local in /etc/fstab.  Creating one ..."
+    # If there are any ext4 partitions, use that; otherwise use ext3.
+    if grep -Eq '[[:space:]]ext4[[:space:]]' /etc/fstab; then
+	FS=ext4
+    else
+	FS=ext3
+    fi
+    # Create a very generic /etc/fstab record for /usr/local.
+    cat <<EOF >> /etc/fstab
+$PART		/usr/local	$FS	defaults	1 2
+EOF
+fi
+
+log "Attempting to mount /usr/local ..."
+# Mount the possibly new partition.
+if mount /usr/local; then
+    log "Success!"
+else
+    log "Failed."
+fi

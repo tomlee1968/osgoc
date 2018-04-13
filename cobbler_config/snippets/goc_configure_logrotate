@@ -1,0 +1,10 @@
+## goc_configure_logrotate (postinstall)
+
+## Causes logrotate to configure the custom logfile /var/log/fw, which
+## separates the firewall log messages from the rest.
+
+# Configure logrotate
+echo "Configuring logrotate ..."
+if ! grep -Fq /var/log/fw /etc/logrotate.d/syslog; then
+    sed -i -re 's! \{! /var/log/fw {!' /etc/logrotate.d/syslog
+fi

@@ -1,0 +1,20 @@
+## goc_install_pause (preinstall or postinstall)
+## Drops to a shell for verification if $install_pause is on (see
+## goc_preamble); continues on 'exit' or Ctrl-D
+
+#if $getVar('install_pause', '')
+  #if $getVar('distro', '') == 'c7'
+    ## The console is almost always messed up in CentOS 7 -- input
+    ## keystrokes aren't echoed, output newlines don't come with
+    ## carriage returns, and somehow programs aren't allowed to accept
+    ## raw keystrokes, requiring an Enter with each one.  This may fix
+    ## that.
+    stty sane -icanon -F /dev/console
+  #end if
+  cat <<EOF >/dev/console
+
+DEBUG: Dropping to shell for verification; type 'exit' or Ctrl-D to continue
+
+EOF
+  /bin/bash < /dev/console >& /dev/console
+#end if

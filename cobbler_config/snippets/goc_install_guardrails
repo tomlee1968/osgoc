@@ -1,0 +1,23 @@
+# goc_install_guardrails (postinstall)
+# Do some things to protect us from ourselves
+
+echo "Installing protective measures ..."
+
+# This snippet is made up of mistakes.  Without naming names,
+# everything in here is a result of one user or another's "I made a
+# mistake, so write a Puppet rule to protect me from doing it again"
+# suggestions.  Some of those Puppet rules were then moved to
+# kickstart snippets so they can be part of physical servers and
+# stemcell images, and Puppet won't have to waste time constantly
+# making sure they're present.
+
+if pushd /root/stemcellize >&/dev/null; then
+  # This puts a code snippet into /etc/profile.d that aliases commands
+  # such as 'poweroff', 'halt' and 'reboot' so if the user
+  # accidentally types them into the wrong terminal window, they'll
+  # just get a message saying that this is an alias.
+
+  install -m0755 -o root -g root protective_aliases.sh /etc/profile.d
+
+  popd >&/dev/null
+fi

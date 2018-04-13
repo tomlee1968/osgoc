@@ -1,0 +1,14 @@
+## goc_configure_inputrc (postinstall)
+## Configure /etc/inputrc
+
+# Silence the tab-completion bell
+echo "Configuring /etc/inputrc so as to silence the tab-completion bell ..."
+if grep -Eq "^[[:space:]]*#?[[:space:]]*set[[:space:]]+bell-style[[:space:]]" /etc/inputrc; then
+    sed -i.bak -re "/^[[:space:]]*#?[[:space:]]*set[[:space:]]+bell-style[[:space:]]/cset bell-style none" /etc/inputrc
+else
+    cat <<EOF >> /etc/inputrc
+
+# Do not bell on tab completion
+set bell-style none
+EOF
+fi

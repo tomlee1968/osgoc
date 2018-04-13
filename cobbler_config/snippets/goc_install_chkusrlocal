@@ -1,0 +1,16 @@
+## goc_install_chkusrlocal (postinstall)
+## Install the /sbin/chkusrlocal script, which makes sure that
+## /dev/hdb or /dev/sdb is partitioned and has a filesystem
+
+# The chkusrlocal script (sets up /usr/local)
+mkdir -m0755 -p /opt/sbin
+install -m0744 -o root -g root /root/stemcellize/chkusrlocal /opt/sbin
+
+# The initscript that runs chkusrlocal
+install -m0755 -o root -g root /root/stemcellize/chkusrlocal.init /etc/init.d/chkusrlocal
+chkconfig --add chkusrlocal
+
+## Patch /etc/rc.sysinit to run chkusrlocal
+## pushd /etc/rc.d
+## patch -N < /root/stemcellize/rc.sysinit.chkusrlocal.patch
+## popd

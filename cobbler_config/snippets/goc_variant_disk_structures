@@ -1,0 +1,20 @@
+## goc_variant_disk_structures (command)
+## Allow certain systems to have different disk structures
+## I was never able to get this to work; do not use unless you plan to debug it
+## This is in the middle of an #if construction
+#else if $getVar('system_name', '') == 'oasis_vm'
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=12288
+logvol /srv  --vgname=vg0 --name=srv  --fstype=ext4 --size=131072 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=4096
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024
+#else if $getVar('system_name', '') == 'thomlee_vm'
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=12288
+logvol /srv  --vgname=vg0 --name=srv  --fstype=ext4 --size=2048 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=4096
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024

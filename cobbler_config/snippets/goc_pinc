@@ -1,0 +1,151 @@
+## goc_pinc (preinstall)
+## Writes /tmp/pre_install_network_config.
+
+## The /tmp/pre_install_network_config consists of 'network' commands,
+## meaning the sort of 'network' commands that appear in the kickstart
+## file's command section.  In fact, /tmp/pre_install_network_config
+## will be read in the command section, by the 'goc_network_config'
+## snippet -- in most cases, anyway.
+
+## This takes the place of the Cobbler-provided
+## pre_install_network_config snippet.  The goal here is to:
+
+## Only execute if the profile was selected automatically via a system
+## record, as opposed to manually selected from the PXE menu
+
+## Generate /tmp/pre_install_network_config, consisting of one
+## kickstart-style "network" line per physical interface
+
+## Keep in mind that here at the GOC, the Cobbler PXE server will, in
+## nearly all cases, be on the VLAN that is connected to the second
+## network adapter ($if02), not the first.
+
+## So these variables will be guaranteed to be defined and won't kill
+## the whole kickstart file if any of them aren't
+##
+#set distro=$getVar('distro', '')
+#set if01=$getVar('if01', '')
+#set if02=$getVar('if02', '')
+#set stemcell=$getVar('stemcell', '')
+#set system_name=$getVar('system_name', '')
+
+## At the point where this runs, the VM has no networking on $if01 and
+## a LAN DHCP address on $if02.  We will, however, need $if01 to be up
+## in order to use the OSG software repository, repo.uits.indiana.edu,
+## even though it's also at repo[12].goc.  The internal '.goc'
+## addresses don't go through LVS, so we'd have to pick one, which
+## would then introduce a single point of failure if that one happened
+## to be offline.
+
+## echo "Pausing to see what the network environment is like before we've even supposedly started networking."
+## $SNIPPET('goc_install_pause')
+
+## Execute only if there is some system_name
+#if $system_name
+  ## If the $stemcell variable is set, do it this way:
+  #if $stemcell
+    ## If it's a stemcell, we automatically know certain things about
+    ## the network adapters.  There's no bridging or bonding, they're
+    ## eth0/eth1, and we know the setup for each.  Just write a known
+    ## configuration to /tmp/pre_install_network_config.
+
+    #if $distro == '5'
+      ## The version of Anaconda in the RHEL 5 install image doesn't support IPv6.
+sysctl -w net.ipv6.conf.all.disable_ipv6=1
+cat <<EOF >>/tmp/pre_install_network_config
+network --device=$if01 --onboot=yes --bootproto=static --ip=129.79.53.51 --netmask=255.255.255.0 --gateway=129.79.53.1 --nameserver="192.168.96.4,192.168.97.12,129.79.1.1,129.79.5.100" --hostname=interjection.uits.indiana.edu
+
+network --device=$if02 --onboot=yes --bootproto=static --ip=192.168.96.8 --netmask=255.255.252.0
+EOF
+    #else
+sysctl -w net.ipv6.conf.all.disable_ipv6=0
+cat <<EOF >>/tmp/pre_install_network_config
+network --device=$if01 --onboot=yes --bootproto=static --ipv6=2001:18e8:2:6::138/64 --ipv6gateway=2001:18e8:2:6::1 --ip=129.79.53.51 --netmask=255.255.255.0 --gateway=129.79.53.1 --nameserver="192.168.96.4,fd2f:6feb:37::4,192.168.97.12,fd2f:6feb:37:1::c,129.79.1.1,2001:18e8:3:220::10,129.79.5.100,2001:18e8:2:8::10" --hostname=interjection.uits.indiana.edu
+
+network --device=$if02 --onboot=yes --bootproto=static --ipv6=fd2f:6feb:37::8/48 --ip=192.168.96.8 --netmask=255.255.252.0 --nodefroute
+EOF
+    #end if
+
+    ## Don't know why, but RHEL 5 Anaconda has trouble starting networking automatically
+
+    #if $distro == '5'
+mkdir /etc/network
+for i in pre-up up down post-down; do
+    mkdir /etc/network/if-$i.d
+done
+mkdir /var/lib/dhclient
+      #if $if01
+cat <<EOF >/etc/network/interfaces
+auto $if01
+iface $if01 inet static
+    address 129.79.53.51
+    netmask 255.255.255.0
+    gateway 129.79.53.1
+iface $if01 inet6 static
+    address 2001:18e8:2:6::138
+    netmask 64
+    gateway 2001:18e8:2:6::1
+EOF
+      #end if
+      #if $if02
+cat <<EOF >>/etc/network/interfaces
+auto $if02
+iface $if02 inet static
+    address 192.168.96.8
+    netmask 255.255.252.0
+iface $if02 inet6 static
+    address fd2f:6feb:37::8
+    netmask 48
+EOF
+      #end if
+
+ifup -a
+## echo "Pause to check /etc/network/interfaces."
+## $SNIPPET("goc_install_pause")
+rm -rf /etc/network
+
+    #else
+      ## All distros other than RHEL 5: do this
+
+ip route flush all
+
+      ## If $if01 is defined, give interface $if01 the IP addresses
+      ## for interjection.uits.indiana.edu, our designated external
+      ## hostname for stemcell building.
+      #if $if01
+ip addr flush dev $if01
+ip addr add 2001:18e8:2:6::138/64 dev $if01
+ip route add 2001:18e8:2:6::/64 dev $if01
+ip route add default via 2001:18e8:2:6::1
+ip addr add 129.79.53.51/24 dev $if01
+ip route add 129.79.53.0/24 dev $if01
+ip route add default via 129.79.53.1
+      #end if
+
+      ## Likewise, if $if02 is defined, give interface $if02 the IP
+      ## addresses for interjection.goc, our designated internal
+      ## hostname for stemcell building.
+      #if $if02
+ip addr flush dev $if02
+ip addr add fd2f:6feb:37::8/48 dev $if02
+ip route add fd2f:6feb:37::/48 dev $if02
+ip addr add 192.168.96.8/22 dev $if02
+ip route add 192.168.96.0/22 dev $if02
+      #end if
+    #end if
+
+## echo "Pausing to check network routes:"
+## ip route show
+## $SNIPPET('goc_install_pause')
+
+  #else
+
+    ## If it's not a stemcell, use the stock
+    ## pre_install_network_config:
+    $SNIPPET("pre_install_network_config")
+  #end if
+#end if
+# End goc_pinc generated code
+
+## echo "Pause to check networking."
+## $SNIPPET("goc_install_pause")

@@ -1,0 +1,16 @@
+## goc_install_vm_specific_software (postinstall)
+## Installs any software that the VM requires, if indeed it is a VM
+
+echo "Installing VM-specific software ..."
+
+# If this is VMware, install VMware Tools
+if lspci | grep -qi vmware; then
+    echo "Installing VMware Tools"
+    wget http://cobbler.goc/cblr/pub/VMwareTools-1.0.10-203137.i386.rpm
+    rpm -ivh VMwareTools-1.0.10-203137.i386.rpm
+##  yum -y install gcc
+## Can't compile the modules -- running kernel != installed kernel
+##    vmware-config-tools.pl -c -d
+##    echo "Pausing.  Type 'exit' to continue."
+##    bash
+fi

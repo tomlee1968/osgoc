@@ -1,0 +1,44 @@
+# goc_hostname_puppet (postinstall)
+# Set up puppet for hosts that have a $hostname
+
+echo "Running Puppet:"
+
+# Disable Puppet, because we're running it from cron (the first time
+# Puppet is run, it will set this up)
+chkconfig --level 2345 puppet off
+
+if [ "$hostname" ]; then
+    # This will add a fact called "anaconda" to facter, so the Puppet rules will be
+    # able to tell that it's being run by Anaconda -- for example, so Puppet
+    # doesn't try to restart iptables, which doesn't work because the running
+    # kernel and the installed kernel aren't generally the same version
+    cat <<"EOF" > /usr/lib/ruby/site_ruby/1.8/facter/anaconda.rb
+Facter.add(:anaconda) do
+    setcode do
+        begin
+            1
+        rescue LoadError
+            nil
+        end
+    end
+end
+EOF
+
+#    echo "About to configure Puppet -- pausing (press Ctrl-D to continue)" >& /dev/console
+#    bash < /dev/console >& /dev/console
+
+    # Remove any existing Puppet certificate for this hostname
+    ssh -o StrictHostKeyChecking=no -i /root/.ssh/id_goc.dsa puppetcert@puppet.goc sudo -n -E /opt/sbin/puppet-deletecert $hostname
+
+#    echo "Old Puppet cert removed; about to run Puppet for first time -- pausing (press Ctrl-D to continue)" >& /dev/console
+#    bash < /dev/console >& /dev/console
+
+    # Run Puppet
+    puppet agent --no-daemonize --verbose --onetime --waitforcert 120 --fqdn $hostname --environment=development
+
+#    echo "Puppet has just been run for first time -- pausing (press Ctrl-D to continue)" >& /dev/console
+#    bash < /dev/console >& /dev/console
+
+    # Remove the "anaconda" fact now that that's done
+    rm -f /usr/lib/ruby/site_ruby/1.8/facter/anaconda.rb
+fi

@@ -1,0 +1,9 @@
+## goc_create_directories (postinstall)
+## Create some necessary directories
+
+# Make some necessary directories
+echo "Creating necessary directories ..."
+for i in /etc/grid-security/certificates \
+  /opt/sbin; do
+    mkdir -p -m0755 $i
+done

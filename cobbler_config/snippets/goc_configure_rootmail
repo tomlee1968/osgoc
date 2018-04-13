@@ -1,0 +1,7 @@
+## goc_configure_rootmail (postinstall)
+## Configure root email to go to root@rootmail.goc
+
+# Configure rootmail
+echo "Configuring root email destination ..."
+sed -i -re 's/^#?[[:space:]]*root:.*$/root:\t\troot@rootmail.goc/' /etc/aliases
+newaliases

@@ -1,0 +1,20 @@
+## goc_configure_usr_local (postinstall)
+## Do anything that needs to be done to make /usr/local work
+
+echo "Configuring /etc/fstab to mount /usr/local correctly ..."
+
+# When installing RHEL 6, Anaconda sets up /etc/fstab to mount
+# /usr/local by UUID.  Normally this is all well and good, but
+# obviously this won't work for stemcells, because whenever we make a
+# new VM we create a new disk image with a new UUID.  This is one
+# situation where mounting by label works best.  Change /etc/fstab to
+# mount /usr/local by label (the label will always be "/usr/local",
+# because I've written the scripts that create the volume to always
+# give it that label).
+
+# This sed command edits /etc/fstab, leaving a backup file at
+# /etc/fstab~, and what it does is search for the line that mounts a
+# volume at /usr/local, replacing its device specifier with
+# "LABEL=/usr/local" and leaving everything else on the line alone.
+
+sed -i -re '/^[^[:space:]]+[[:space:]]+\/usr\/local[[:space:]]/s/^[^[:space:]]+([[:space:]]+.*)$/LABEL=\/usr\/local\1/' /etc/fstab

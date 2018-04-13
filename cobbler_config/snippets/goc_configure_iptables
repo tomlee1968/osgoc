@@ -1,0 +1,13 @@
+## goc_configure_iptables (postinstall)
+## Configure iptables, at least initially
+
+echo "Installing iptables customizations ..."
+#if $getVar('distro', '') == 'c7'
+  yum install -y -q iptables-services-goc >/dev/null
+#else
+  yum install -y -q gociptables
+  pushd /root/stemcellize >/dev/null
+  install -m0600 -o root -g root iptables-config /etc/sysconfig/
+  install -m0600 -o root -g root ip6tables-config /etc/sysconfig/
+  popd > /dev/null
+#end if

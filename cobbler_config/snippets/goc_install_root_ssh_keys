@@ -1,0 +1,7 @@
+## goc_install_root_ssh_keys (postinstall)
+## Install the root SSH keys
+
+# The root ssh keys
+echo "Installing root SSH keys ..."
+mkdir -p -m0700 /root/.ssh
+tar zxvf /root/stemcellize/localkeys.tar.gz -C /

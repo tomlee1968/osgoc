@@ -1,0 +1,11 @@
+## goc_fix_initscripts (postinstall)
+## Fixes up initscripts as we need them
+
+## There is a bug in the SYSV INIT system that Red Hat uses that causes
+## problems on shutdown when a lockfile doesn't have the same name as
+## the initscript that creates it.  This fixes that by changing the
+## names of the lockfiles.
+
+# Fix a bug in these initscripts
+sed -i -re 's!/var/lock/subsys/nfsd!/var/lock/subsys/nfs!g' /etc/init.d/nfs
+sed -i -re 's!^LOCKFILE=/var/lock/subsys/$prog!LOCKFILE=/var/lock/subsys/rpcidmapd!' /etc/init.d/rpcidmapd

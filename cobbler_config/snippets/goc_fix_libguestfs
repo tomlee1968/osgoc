@@ -1,0 +1,18 @@
+## goc_fix_libguestfs
+## Postinstall snippet
+
+## The libguestfs package brings in a dependency called zfs-fuse,
+## which has an initscript, but doesn't actually start the service or
+## set it to automatically run at boot -- which is good, because
+## libguestfs doesn't need zfs-fuse to be running in order to access
+## the contents of a virtual disk.  However, zfs-fuse brings in an
+## /etc/cron.weekly job that does some cleanup on ZFS volumes, but
+## this job results in error email to root when the zfs-fuse service
+## isn't running.  To shut this up, we must edit
+## /etc/sysconfig/zfs-fuse and set ZFS_WEEKLY_SCRUB to "no", disabling
+## this sloppily-written weekly cleanup that runs without checking to
+## see whether the service is active.
+
+if [[ -e /etc/sysconfig/zfs-fuse ]] && grep -Eq "^[[:space:]]*ZFS_WEEKLY_SCRUB=yes" /etc/sysconfig/zfs-fuse; then
+    sed -i -re "s/^([[:space:]]*)ZFS_WEEKLY_SCRUB=.*$/\ZFS_WEEKLY_SCRUB=no/" /etc/sysconfig/zfs-fuse
+fi

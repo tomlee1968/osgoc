@@ -1,0 +1,7 @@
+[Remote libvirt SSH access]
+Identity=unix-group:vm
+Action=org.libvirt.unix.manage
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+

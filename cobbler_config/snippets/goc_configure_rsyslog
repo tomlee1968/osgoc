@@ -1,0 +1,6 @@
+## goc_configure_rsyslog (postinstall)
+## Configure rsyslog (this would be on RHEL6)
+
+# Install rsyslog config file
+echo "Configuring rsyslog ..."
+install -m0644 -o root -g root /root/stemcellize/rsyslog.conf /etc/

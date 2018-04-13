@@ -1,0 +1,28 @@
+## goc_configure_sudo (postinstall)
+## Configures sudo
+
+## This places the following settings in /etc/sudoers after the
+## "Defaults requiretty" line:
+
+## lecture: The first time a given user runs sudo on this host, they
+## will get the "with great power comes great responsibility" lecture
+## from Uncle Ben.
+
+## insults: Insults users who sudo and then enter a bad password.
+## Actually I don't know what this is supposed to display, because no
+## matter whether this is set or not, it just says, "Sorry, bad
+## password" or the like.  I think Red Hat censored it.
+
+## authenticate: This is on by default, but it means that unless an
+## individual user or group is otherwise configured, a user must
+## authenticate via a password (or some other means) in order to use
+## sudo.
+
+## It also replaces the commented out line granting access to the
+## "wheel" group with an uncommented line granding root access to
+## everyone in the "sudoers" group, which is in LDAP and is thus
+## subnet-wide, but a password is required.
+
+# Configure sudo
+echo "Configuring sudo ..."
+sed -i -re '/Defaults +requiretty/a\\nDefaults    lecture\nDefaults    insults\nDefaults    authenticate' -e '/# *%wheel.*NOPASSWD: *ALL$/a\\n%sudoers\tALL=(ALL)\tALL' /etc/sudoers

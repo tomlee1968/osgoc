@@ -1,0 +1,51 @@
+## goc_munin_node (postinstall)
+## Set up everything the host needs to be monitored by Munin
+
+if rpm -q munin-node >&/dev/null; then
+    echo "Configuring system so it can be monitored by Munin ..."
+
+    # Make the directory for local Munin plugins
+    mkdir -p -m0755 /opt/share/munin/plugins
+
+    # Make the directory for Munin logs
+    mkdir -p -m0775 /var/log/munin
+    chgrp munin /var/log/munin
+
+    # Configure the Munin node
+    install -m0644 -o root -g root /root/stemcellize/munin-node.conf /etc/munin
+
+    # Install only the plugins we want (other plugins can be installed
+    # later by their service-specific install scripts)
+    pushd /etc/munin/plugins >/dev/null
+    rm -f *
+    for i in df df_inode iostat netstat processes cpu load memory ntp_offset swap; do
+        ln -s ../../../usr/share/munin/plugins/$i .
+    done
+
+#unless $getVar('virtual', '')
+    # Install the hardware monitor plugins (but only on physical servers)
+    ln -s ../../../opt/share/munin/plugins/gocipmi_ gocipmi_dell_fan
+    ln -s ../../../opt/share/munin/plugins/gocipmi_ gocipmi_dell_temp
+#end unless
+
+    popd > /dev/null
+
+    # Install plugin config files
+    for i in cpu df load ip_; do
+        install -oroot -groot -m0644 /root/stemcellize/munin-plugin-conf-$i /etc/munin/plugin-conf.d/$i
+    done
+
+    # Install setup_munin_cert_age
+    install -oroot -groot -m0754 /root/stemcellize/setup_munin_cert_age.sh /opt/sbin/
+    install -oroot -groot -m0644 /root/stemcellize/setup_munin_cert_age.cron /etc/cron.d/setup_munin_cert_age
+
+    # Make sure munin-node runs
+    if which systemctl >&/dev/null; then
+      systemctl enable munin-node.service
+    else
+      chkconfig --level 35 munin-node on
+    fi
+
+    # Configure logrotate to handle munin-node logs
+    install -m0644 -o root -g root /root/stemcellize/logrotate_munin-node /etc/logrotate.d/munin-node
+fi

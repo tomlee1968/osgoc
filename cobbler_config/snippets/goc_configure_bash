@@ -1,0 +1,79 @@
+## goc_configure_bash (postinstall)
+## Configure several things having to do with bash
+
+echo "Installing custom bash configuration ..."
+
+# Configure bashrc/profile
+##sed -i -re 's/umask[[:space:]]+002/umask 022/' /etc/bashrc
+##sed -i -re '/\[ \"\\$PS1\" = / {
+##    r /root/stemcellize/bash_prompt_snippet
+##    d
+##}' /etc/bashrc
+##sed -i -re '/# Path manipulation/a\pathmunge /opt/bin' /etc/profile
+##sed -i -re '\!pathmunge /usr/local/sbin!a\\tpathmunge /opt/sbin' /etc/profile
+
+# Bash profile bits
+pushd /root/stemcellize > /dev/null
+install -m0755 -o root -g root x_console_auth.sh no_empty_cmd_completion.sh /etc/profile.d
+
+## User custom .bash_profile files -- if they want one, be sure to
+## copy the files from /etc/skel into their home directory here.  Why?
+## Normally pam_mkhomedir.so automatically does this when a user first
+## logs in, IF THEIR HOME DIRECTORY DOESN'T EXIST, but here we must
+## create this user's home directory in order to install .bash_profile
+## in it.  So when they log in, pam_mkhomedir.so will see a directory
+## there and won't do anything.
+
+## What's so important about the files in /etc/skel?  Short version:
+## it's all about bash.  Long version: I guess most people don't know
+## what bash does by default when it starts up.  Most people seem to
+## think that bash runs /etc/profile, /etc/bashrc, ~/.bash_profile,
+## and ~/.bashrc.  But that's not really true.  In order to get that
+## behavior, you need the basic .bashrc and .bash_profile starter
+## files from /etc/skel, or the prompt, umask, and other changes in
+## /etc/bashrc won't happen.
+
+## Longer version: When bash starts, it's either interactive (you get
+## a prompt) or non-interactive (you're running a shell script), and
+## interactive is divided into login (when you connect to a system) or
+## non-login (if you run a subshell) cases.  These affect which config
+## files bash sources when it starts up.  If it's started as an
+## interactive login shell, bash sources /etc/profile, then the first
+## one of these that it finds: ~/.bash_profile, ~/.bash_login, and
+## ~/.profile.  That's it -- nothing else.  If it's started as an
+## interactive shell but not a login shell (such as when you type
+## 'bash' on the command line), it sources ~/.bashrc, and that's all
+## (it won't even source /etc/profile, although any environment
+## variables that are marked for 'export' will come along for the
+## ride).  Note that nothing ever sources /etc/bashrc at all.  But
+## that's not the behavior that anyone expects, so most distros tweak
+## the default user files to have ~/.bashrc source /etc/bashrc, and
+## ~/.bash_profile source ~/.bashrc.  The user can modify these if
+## they want to change that behavior, but by default they get what's
+## in /etc/bashrc if it's an interactive shell at all, and what's in
+## /etc/profile if it's also a login shell.  (Non-interactive shells
+## get none of this, but they do still get exported environment
+## variables.)
+
+cp -a /etc/skel /home/thomlee
+chown -R thomlee:goc /home/thomlee
+install -D -m0755 -o thomlee -g thomlee bash_profile_thomlee /home/thomlee/.bash_profile
+popd > /dev/null
+
+## If /root doesn't have a file that's in /etc/skel, copy the one from
+## /etc/skel into /root.  Don't disturb any files that are already in
+## /root.  I found out that CentOS 6 doesn't have /root/.bash_profile,
+## which means that /root/.bashrc doesn't get executed when you become
+## root.
+
+pushd /etc/skel > /dev/null
+savedotglob=\$(shopt -p dotglob)
+shopt -s dotglob
+for i in *; do
+    if [[ ! -e /root/$i ]]; then
+	cp -a $i /root/
+	chown root:root /root/$i
+    fi
+done
+$savedotglob
+popd > /dev/null

@@ -1,0 +1,12 @@
+## goc_configure_nsswitch (postinstall)
+## Configures /etc/nsswitch.conf
+
+echo "Configuring libnss ..."
+
+## This makes libnss get its hosts information from:
+## 1. /etc/hosts
+## 2. LDAP query
+## 3. DNS query
+
+# Configure nsswitch
+sed -i -re 's/^[[:space:]]*hosts:.*$/hosts:\tfiles ldap dns/' /etc/nsswitch.conf

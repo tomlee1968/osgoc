@@ -1,0 +1,15 @@
+## goc_install_stemcell_certs (postinstall)
+## Install the stemcell certificates.
+
+echo "Installing stemcell host certificate ..."
+
+# Make sure the directory exists.
+mkdir -p -m0755 /etc/grid-security/host
+
+# Get stemcell certificates
+pushd /etc/grid-security/host > /dev/null
+install -m0644 -o root -g root /root/stemcellize/stemcell.grid.iu.edu-hostcert.pem .
+install -m0600 -o root -g root /root/stemcellize/stemcell.grid.iu.edu-hostkey.pem .
+cp -p stemcell.grid.iu.edu-hostcert.pem cert.pem
+cp -p stemcell.grid.iu.edu-hostkey.pem key.pem
+popd > /dev/null

@@ -1,0 +1,27 @@
+## goc_functions (postinstall) -- useful functions
+
+#raw
+function ensure_rpms() {
+
+  # Ensures the given RPMs are installed -- if they aren't, installs
+  # them via YUM.  Won't print any messages about anything already
+  # being installed.  If you see any messages during the install
+  # process about RPMs being installed, you may want to ensure that
+  # these RPMs are listed in the kickstart file's package list (see
+  # the goc_packages snippet).  If the messages persist, you may want
+  # to put them in the Anaconda-only Puppet rules for the appropriate
+  # distro (or for all distros), because Anaconda sometimes stubbornly
+  # refuses to install an RPM in the kickstart file's package list for
+  # mysterious reasons.
+
+  local RPMs=() rpm
+  for rpm in "$@"; do
+    if ! /bin/rpm -q "$rpm" >&/dev/null; then
+      RPMs=("${RPMs[@]}" "$rpm")
+    fi
+  done
+  if [[ ${#RPMs[@]} -gt 0 ]]; then
+    yum -y install ${RPMs[@]}
+  fi
+}
+#end raw

@@ -1,0 +1,6 @@
+## goc_configure_netfiles (postinstall)
+## Install files like /etc/networks, /etc/ethers, etc.
+
+pushd /root/stemcellize >/dev/null
+install -oroot -groot -m0644 networks /etc/
+popd >/dev/null

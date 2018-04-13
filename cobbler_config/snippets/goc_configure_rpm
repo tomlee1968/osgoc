@@ -1,0 +1,6 @@
+## goc_configure_rpm (postinstall)
+## Configures the RPM command with GOC customizations
+
+# This just makes "rpm -q" show the package's architecture by default
+# in RHEL5, which is automatic in RHEL6
+install -m0644 -o root -g root /root/stemcellize/macros.nvra /etc/rpm/

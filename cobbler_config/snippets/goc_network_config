@@ -1,0 +1,38 @@
+## Unlike the standard Cobbler network_config snippet, this will work
+## with the GOC setup.  What is the GOC setup, you may ask?
+##
+## First of all, there are two network interfaces.  These are called
+## eth0 and eth1 if there isn't CNDN, or em1 and em2 if CNDN is in
+## play.  CNDN stands for Consistent Network Device Naming and is a
+## way for the BIOS to suggest standard names for the network
+## interfaces in such a way that the same interfaces always get the
+## same names.  In order for CNDN to happen, though, the BIOS must be
+## talking, and the kernel must be listening.  RHEL 6.1 and later
+## support it, and Dell PowerEdge servers of the R series with a
+## nonzero penultimate digit (R515, R620, etc., but not R505) also
+## support it.  However, the virtual BIOS of a qemu VM does not.
+##
+## At any rate, the presence of CNDN is not detected by these
+## snippets; it is found in system records -- the variable $cndn will
+## be true or false.  The goc_preamble snippet sets the variables if01
+## and if02 to the two interfaces.
+##
+## Second, the first interface is on the public VLAN (259, with IPv4
+## range 129.79.53.0/24 and IPv6 range 2001:18e8:2:6::/64) while the
+## second is on the private VLAN (4020, unrouted, so we've assigned
+## IPv4 range 192.168.96.0/22 and IPV6 range fd2f:6feb:37::/48).
+##
+## The PXE booting and DHCP dynamic addressing is done via the second
+## interface, $if02, rather than the first.  All permanent GOC hosts
+## have static IPs on both networks.  There is a public IP, with
+## hostname interjection.uits.indiana.edu, for installing systems
+## before they have been configured with their final static IPs.
+
+#set stemcell=$getVar('stemcell', '')
+
+#if $stemcell
+  ## The goc_pinc snippet will already have written this:
+%include /tmp/pre_install_network_config
+#else
+  $SNIPPET("network_config")
+#end if

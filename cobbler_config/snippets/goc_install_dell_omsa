@@ -1,0 +1,108 @@
+# goc_install_dell_omsa (postinstall)
+# Install Dell OpenManage Server Administrator
+# This is only useful on physical servers that are from Dell
+
+echo "Installing Dell OpenManage Server Administrator ..."
+
+# Install the Dell software repository
+if [[ ! -e /etc/yum.repos.d/dell-omsa-repository.repo ]]; then
+    wget -q -O - http://linux.dell.com/repo/hardware/latest/bootstrap.cgi | bash
+fi
+
+# Install the OMSA software
+yum -y -q install srvadmin-all firmware-tools
+
+# Create the 'dellomadm' group if it doesn't already exist -- this
+# group is defined in LDAP, so this should result in the creation of
+# this group only on servers that don't get their authentication from
+# LDAP.
+
+# As the "getent" command works with /etc/nsswitch.conf, only call
+# this snippet after any other snippets that modify
+# /etc/nsswitch.conf, and if /etc/nsswitch.conf has "ldap" on the
+# "group" line, only call this snippet after any other snippets that
+# modify /etc/ldap.conf.
+
+if ! getent group dellomadm; then
+    groupadd -g 905 dellomadm
+fi
+
+# Modify the rolemap file so that members of this group are
+# administrators.
+echo <<EOF >> /opt/dell/srvadmin/etc/omarolemap
+
++dellomadm *       Administrator
+EOF
+
+# Set the services to start at boot time
+for i in dataeng dsm_om_connsvc dsm_om_shrsvc; do
+    chkconfig --level 2345 $i on
+done
+
+# Get the GOC helper files for Dell OMSA
+pushd /root > /dev/null
+wget -O goc_dell_omsa.tgz http://$server/cobbler/pub/goc_dell_omsa.tgz
+tar zxvf goc_dell_omsa.tgz
+cd goc_dell_omsa
+
+# Drop the firewall file in
+install -m0744 -o root -g root 55-local-dell_om /etc/iptables.d
+
+# Dell OMSA has the ability to perform various actions when a hardware
+# event occurs.  Unfortunately sending email isn't one of those
+# actions.  However, running an arbitrary script is one of them -- for
+# example, a script that sends email.  I wrote this dellom_alertmail
+# script, which can not only send email when called from Dell OMSA,
+# but, when called with the proper command-line option, can go through
+# all of OMSA's hardware events and and configure OMSA to run it
+# whenever any of those events occurs.  However, these settings only
+# last as long as OMSA is running, so we need this to run at boot,
+# after OMSA is already running.  If an admin restarts OMSA, there
+# won't be any email alerts until somebody runs the alert mail script
+# in configurator mode.  There's a Puppet rule that checks whether
+# that needs to happen, though, and it runs it if necessary.
+
+# Install the alert mail configurator script
+install -m0744 -o root -g root dellom_alertmail /opt/sbin
+
+# Install the initscript that runs dellom_alertmail at boot.
+install -m0744 -o root -g root dellom_alertmail_init /etc/init.d/dellom_alertmail
+chkconfig --add dellom_alertmail
+
+# Now, Dell OMSA has a semaphore leak -- it keeps starting processes
+# that create semaphore sets and exit without deleting them.  It only
+# creates about one per hour, but over time this can reach the server
+# semaphore set limit, and then no process can create semaphores sets.
+# Some software needs to create them, though -- this can prevent
+# Apache from being able to start.  This bug has been around for quite
+# a while and hasn't been fixed.  Luckily it's easy to work around --
+# I just wrote a script that deletes any semaphore sets whose owner
+# PID doesn't exist.  Rebooting also fixes the problem, but if you go
+# for more than a few months without a reboot, you can get into
+# trouble.
+
+# Install the semaphore leak preventer script
+install -m0744 -o root -g root cleanup_semaphores.sh /opt/sbin
+
+# And the crontab file that runs it daily
+install -m0644 -o root -g root cleanup_semaphores_cron /etc/cron.d/cleanup_semaphores
+
+# Increasing the system semaphore limit because the system can still
+# run out of semaphores even with the script -- TJL 2013-12-16
+if grep -Eq '^[[:space:]]*kernel\.sem[[:space:]]*=' /etc/sysctl.conf; then
+    sed -i .bak -re '/^[[:space:]]*kernel\.sem[[:space:]]*=/ckernel.sem = "250 32000 32 4096"'
+else
+    cat <<EOF >> /etc/sysctl.conf
+
+# Controls the maximum number of semaphores per set, maximum number of
+# semaphores overall, maximum allowed semaphore operations per semop
+# call, and maximum number of semaphore sets
+kernel.sem = 250 32000 32 4096
+EOF
+fi
+sysctl -p
+
+# Clean up the tarball
+cd ..
+rm -rf goc_dell_omsa goc_dell_omsa.tgz
+popd > /dev/null

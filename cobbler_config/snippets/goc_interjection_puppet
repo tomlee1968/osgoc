@@ -1,0 +1,267 @@
+## goc_interjection_puppet (postinstall)
+## Set up things to run Puppet as interjection and run it
+
+#set distro=$getVar('distro', '')
+#set if01=$getVar('if01', '')
+
+## Make sure the public network is up
+if ! /sbin/ip addr show dev $if01 | grep inet; then
+   /sbin/ifup $if01
+fi
+
+## We cannot run Puppet without access to the staff UIDs and GIDs from
+## the GOC LDAP server.  Do that one way or another.
+
+#if $distro == '5' or $distro == '6' or $distro == 'c6'
+  ## sssd will not start unless its config file is owned by root and
+  ## unreadable by anyone else.
+  chown root:root /etc/sssd/sssd.conf
+  chmod 0600 /etc/sssd/sssd.conf
+  ## RHEL 5 and RHEL/CentOS 6 can just start sssd now so we can have
+  ## access to the users and groups from LDAP.
+  service sssd start
+#else if $distro == 'c7'
+  ## This uid/gid fix cannot go in Anaconda-only Puppet, because there
+  ## is no way to ensure that it runs before absolutely everything
+  ## else (and that remove_temp_uid_gid runs after absolutely
+  ## everything else). -- TJL 2016-02-02
+
+  echo "The CentOS 7 installer runs systemd, which can't start services under chroot."
+  echo "Yes, they should fix that, but it means we can't use sssd and thus can't get"
+  echo "the users and groups from LDAP automatically.  Contacting it manually to get"
+  echo "the user and group data and create temporary local users/groups for now."
+
+  $SNIPPET('goc_configure_openldap')
+
+  #raw
+function assure_uid_gid() {
+  # Look up the given user/group name and make sure it's available --
+  # if it's not in /etc/passwd and /etc/group, use ldapsearch to find
+  # the correct uid and gid, and use /sbin/groupadd and /sbin/useradd
+  # to add them.  Put a comment in the GECOS field of the /etc/passwd
+  # record to indicate that this is temporary and shuld be removed at
+  # the end of installation.  This is to compensate for the fact that
+  # we can't have sssd running during the postinstall script.
+
+  local id=$1 gid uid members member
+  if [[ ! $id ]]; then
+    return 1
+  fi
+  if getent passwd $id >/dev/null || getent group $id >/dev/null; then
+    return 2
+  fi
+  gid=$(ldapsearch -xLLL -H 'ldap:///dc%3Dgoc' -b dc=goc "(&(objectClass=posixGroup)(cn=$id))" gidNumber | grep -i '^gidnumber' | cut -d ' ' -f 2)
+  if [[ ! $gid ]]; then
+    echo "Unable to find a group named '$id' in LDAP" >/dev/stderr
+    return 3
+  fi
+  if getent group $gid >/dev/null; then
+    echo "LDAP gives GID '$gid' for group '$id', but that GID already exists!" >/dev/stderr
+    return 4
+  fi
+  echo "Creating local group '$id' with GID '$gid' ..."
+  /sbin/groupadd -g $gid $id
+  uid=$(ldapsearch -xLLL -H 'ldap:///dc%3Dgoc' -b dc=goc "(&(objectClass=posixAccount)(uid=$id))" uidNumber | grep -i '^uidnumber' | cut -d ' ' -f 2)
+  if [[ ! $uid ]]; then
+    echo "Unable to find an account named '$id' in LDAP" >/dev/stderr
+    return 3
+  fi
+  if getent passwd $uid >/dev/null; then
+    echo "LDAP gives UID '$uid' for user '$id', but that UID already exists!" >/dev/stderr
+    return 4
+  fi
+  echo "Creating local user '$id' with UID '$uid' ..."
+  /sbin/useradd -M -c TEMPORARY -p '!' -g $gid -u $uid $id
+  members=($(ldapsearch -xLLL -H 'ldap:///dc%3Dgoc' -b dc=goc "(&(objectClass=posixGroup)(cn=$id))" memberUid | grep -i '^memberuid' | cut -d ' ' -f 2))
+  for member in "${members[@]}"; do
+    assure_uid_gid $member
+    /sbin/groupmems -g $id -a $member
+  done
+}
+  #end raw
+
+if ! assure_uid_gid goc; then
+  echo "FAILED" >/dev/stderr
+fi
+#end if
+
+## Anaconda somehow ignores some packages, even though they're listed
+## in the package section.
+
+#if $distro == '6' or $distro == 'c6'
+  yum -y install dnsmasq postfix subversion
+#end if
+
+## Puppet may not be installed
+echo "Making sure Puppet is installed ..."
+#raw
+(
+  puppet_rpm_list=()
+  for rpm in facter augeas augeas-libs puppet ruby-augeas ruby-shadow; do
+    if ! rpm -q $rpm >&/dev/null; then
+      puppet_rpm_list=("${puppet_rpm_list[@]}" $rpm)
+    fi
+  done
+  if [[ ${#puppet_rpm_list[@]} -gt 0 ]]; then
+    yum -y -q install ${puppet_rpm_list[@]}
+  fi
+)
+#end raw
+
+## Disable Puppet as a daemon, because we're running it from cron (the
+## first time Puppet is run, it will set this up)
+echo "Making sure Puppet isn't running as a daemon ..."
+if which systemctl >&/dev/null; then
+  systemctl disable puppet.service
+else
+  chkconfig --level 2345 puppet off
+fi
+
+## This will add a fact called "anaconda" to facter, so the Puppet
+## rules will be able to tell that it's being run by Anaconda -- for
+## example, so Puppet doesn't try to restart iptables, which doesn't
+## work because the running kernel and the installed kernel aren't
+## generally the same version.
+
+echo "Telling Puppet that it's running under Anaconda ..."
+
+#raw
+  # This gives '/usr/lib/ruby/site_ruby/<version>:
+  rubysitedir=$(facter rubysitedir)
+  mkdir -p $rubysitedir/facter
+  cat <<"EOF" > $rubysitedir/facter/anaconda.rb
+Facter.add(:anaconda) do
+  setcode do
+    begin
+      true
+    rescue LoadError
+      nil
+    end
+  end
+end
+EOF
+#end raw
+
+## This does the same for a fact called "stemcell", which will be true
+## if $getVar('stemcell', '') is true.
+
+#if $getVar('stemcell', '')
+  #set ruby_stemcell='true'
+#else
+  #set ruby_setmcell='false'
+#end if
+
+#raw
+  # This gives '/usr/lib/ruby/site_ruby/<version>:
+  rubysitedir=$(facter rubysitedir)
+  mkdir -p $rubysitedir/facter
+  cat <<"EOF" > $rubysitedir/facter/stemcell.rb
+Facter.add(:stemcell) do
+  setcode do
+    begin
+#end raw
+      $ruby_stemcell
+#raw
+    rescue LoadError
+      nil
+    end
+  end
+end
+EOF
+#end raw
+
+## This is a kludge for older versions of Puppet that still use MD5 to create a
+## CSR. Not that we need to create a CSR this time, because we're using a
+## canned certificate/key, but after installation Puppet will need to generate
+## a real key for this server. Make sure it uses SHA256 and not MD5 to create
+## its CSR. Various things no longer like MD5.
+if [ -e /usr/lib/ruby/site_ruby/1.8/puppet/ssl/certificate_request.rb ]; then
+  if grep -q MD5 /usr/lib/ruby/site_ruby/1.8/puppet/ssl/certificate_request.rb; then
+    sed -i -re 's/MD5/SHA256/g' /usr/lib/ruby/site_ruby/1.8/puppet/ssl/certificate_request.rb
+  fi
+fi
+
+## Installs the Puppet keys for interjection.uits.indiana.edu
+echo "Installing initial Puppet SSL keys ..."
+pushd /root >/dev/null
+curl -# -O http://$server/cobbler/pub/puppet_interjection_keys.tgz
+tar zxf puppet_interjection_keys.tgz -C /
+rm -f puppet_interjection_keys.tgz
+popd >/dev/null
+
+echo "About to run Puppet; pausing to check things out."
+$SNIPPET('goc_install_pause')
+
+## Run Puppet using those keys
+echo "Running Puppet for the first time ..."
+puppet agent --test --no-daemonize --onetime --fqdn interjection.uits.indiana.edu --environment=production
+puppet agent --test --no-daemonize --onetime --fqdn interjection.uits.indiana.edu --environment=production
+puppet agent --test --no-daemonize --onetime --fqdn interjection.uits.indiana.edu --environment=production
+
+echo "Pausing to make sure Puppet did what it was supposed to ..."
+$SNIPPET('goc_install_pause')
+
+## Change the "anaconda" fact to return false
+echo "Telling Puppet that it's not running under Anaconda anymore ..."
+
+## This is a CentOS 7 kludge. Apparently "facter rubysitedir" returns
+## something nonsensical or null during stemcell build. When CentOS 7
+## is running, "facter rubysitedir" returns /usr/share/ruby/site_ruby,
+## with no version, and this directory doesn't exist. Facter is
+## actually installed in /usr/share/ruby/vendor_ruby.
+##
+## This appears to be a known bug,
+## https://tickets.puppetlabs.com/browse/FACT-1154
+##
+## Although the problem may be in Ruby, because Ruby itself reports an
+## incorrect value for RbConfig::CONFIG['sitelibdir'], which is where
+## Facter gets rubysitedir. This may fix it (it fixed the problem on a
+## live install).
+
+#if $distro == 'c7'
+  #raw
+  sed -i -re 's/\$\(sitedir\)/$(vendordir)/g' /usr/lib64/ruby/rbconfig.rb
+  #end raw
+#end if
+
+#raw
+  # This gives the location of the facter scripts:
+  rubysitedir=$(facter rubysitedir)
+  mkdir -p $rubysitedir/facter
+  cat <<"EOF" > $rubysitedir/facter/anaconda.rb
+Facter.add(:anaconda) do
+  setcode do
+    begin
+      false
+    rescue LoadError
+      nil
+    end
+  end
+end
+EOF
+  rm -f $rubysitedir/facter/stemcell.rb
+#end raw
+
+#if $distro == 'c7'
+  ## Cannot be moved to Puppet -- TJL 2016-02-03
+
+  #raw
+function remove_temp_uid_gid() {
+  # Remove all records from /etc/passwd and /etc/group whose GECOS
+  # field is 'TEMPORARY'.  This should delete all records created by
+  # assure_uid_gid and ideally nothing else.
+  local users user
+  echo -n 'Removing temporary users and groups ...'
+  while grep -E '^[^:]+:[^:]+:[^:]+:[^:]+:TEMPORARY:' /etc/passwd >/dev/null; do
+    users=($(grep -E '^[^:]+:[^:]+:[^:]+:[^:]+:TEMPORARY:' /etc/passwd | cut -d ':' -f 1))
+    for user in "${users[@]}"; do
+      /sbin/userdel $user >&/dev/null
+      /sbin/groupdel $user >&/dev/null
+    done
+  done
+  echo ' Done.'
+}
+  #end raw
+
+remove_temp_uid_gid
+#end if

@@ -1,0 +1,168 @@
+# goc_interjection_networking (postinstall)
+# Install networking for interjection (an address reserved for physical server
+# installation and stemcell rebuilds)
+
+## Addresses (and possibly netmasks) will probably be overwritten by install scripts
+
+echo "Installing physical-server network settings ..."
+
+cat <<"EOF" > /etc/sysconfig/network
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is either an incompletely installed physical server or an
+# incompletely rebuilt 'stemcell' image.  Running an install script
+# for a service or completing the stemcell rebuild process will
+# overwrite this file, though it probably won't change much other than
+# the hostname.
+NETWORKING=yes
+NETWORKING_IPV6=yes
+HOSTNAME=interjection.uits.indiana.edu
+GATEWAY=129.79.53.1
+IPV6_DEFAULTGW=2001:18e8::2:6::1%$if01
+EOF
+
+#if $getVar('kvmhost', '')
+## This bridging setup is necessary only for QEMU/KVM/libvirt hosts
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-$if01
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is an incompletely installed physical server that the system
+# thinks is destined to be a KVM host.  Running an install script to
+# complete the installation of the KVM host will overwrite this file,
+# though it probably won't change much, as this interface is meant to
+# be part of a network bridge on a KVM host.
+DEVICE="$if01"
+TYPE="Ethernet"
+NM_CONTROLLED="no"
+BRIDGE="br0"
+ONBOOT="yes"
+EOF
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-$if02
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is an incompletely installed physical server that the system
+# thinks is destined to be a KVM host.  Running an install script to
+# complete the installation of the KVM host will overwrite this file,
+# though it probably won't change much, as this interface is meant to
+# be part of a network bridge on a KVM host.
+DEVICE="$if02"
+TYPE="Ethernet"
+NM_CONTROLLED="no"
+BRIDGE="br1"
+ONBOOT="yes"
+EOF
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-br0
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is an incompletely installed physical server that the system
+# thinks is destined to be a KVM host.  Running an install script to
+# complete the installation of the KVM host will overwrite this file,
+# changing its IP addresses to the static IPs of the host in question,
+# which are registered in DNS.
+DEVICE="br0"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Bridge"
+BOOTPROTO="none"
+IPADDR=129.79.53.51
+NETMASK=255.255.255.0
+IPV6INIT="yes"
+IPV6ADDR=2001:18e8:2:6::138/64
+EOF
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-br1
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is an incompletely installed physical server that the system
+# thinks is destined to be a KVM host.  Running an install script to
+# complete the installation of the KVM host will overwrite this file,
+# changing its IP addresses to the static IPs of the host in question,
+# which are registered in DNS.
+DEVICE="br1"
+NM_CONTROLLED="no"
+ONBOOT="yes"
+TYPE="Bridge"
+BOOTPROTO="dhcp"
+IPV6INIT="yes"
+EOF
+
+#else
+## This is the normal network configuration
+
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-$if01
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config file
+# written by Anaconda on the GOC's Cobbler server, meaning that this is either
+# an incompletely installed physical server or an incompletely rebuilt
+# 'stemcell' image.  Running an install script for a service or completing the
+# stemcell rebuild process will overwrite this file, changing the IP addresses
+# either to those of the appropriate physical server or to the
+# stemcell.grid.iu.edu addresses.
+DEVICE="$if01"
+BOOTPROTO=static
+ONBOOT=yes
+IPADDR=129.79.53.51
+NETMASK=255.255.255.0
+IPV6INIT=yes
+IPV6ADDR=2001:18e8:2:6::138/64
+EOF
+
+cat <<EOF > /etc/sysconfig/network-scripts/ifcfg-$if02
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config file
+# written by Anaconda on the GOC's Cobbler server, meaning that this is either
+# an incompletely installed physical server or an incompletely rebuilt
+# 'stemcell' image.  Running an install script for a service or completing the
+# stemcell rebuild process will overwrite this file, changing the IP addresses
+# to the static address of the appropriate physical server.
+
+DEVICE="$if02"
+BOOTPROTO=static
+ONBOOT=yes
+IPADDR=129.79.53.8
+NETMASK=255.255.252.0
+IPV6INIT=yes
+IPV6ADDR=fd2f:6feb:37::8/48
+EOF
+#end if
+
+install -oroot -groot -m0644 /root/stemcellize/stemcell.resolv.conf.iub /etc/resolv.conf
+
+cat <<"EOF" > /etc/hosts
+# Written by Cobbler/Anaconda kickstart script
+#
+# If you are reading this, nothing has overwritten the default config
+# file written by Anaconda on the GOC's Cobbler server, meaning that
+# this is either an incompletely installed physical server or an
+# incompletely rebuilt 'stemcell' image.  Running an install script
+# for a service or completing the stemcell rebuild process will
+# overwrite this file, replacing the 'interjection' addresses below
+# with either the addreses of the appropriate physical server or of
+# stemcell.grid.iu.edu.
+::1			localhost lh ip6-localhost ip6-loopback
+fe00::0		ip6-localnet
+ff00::0		ip6-mcastprefix
+ff02::1		ip6-allnodes
+ff02::2		ip6-allrouters
+ff02::3		ip6-allhosts
+127.0.0.1		localhost.localdomain localhost lh
+129.79.53.51		interjection.uits.indiana.edu
+2001:18e8:2:6::138	interjection.uits.indiana.edu
+192.168.96.8		interjection.goc
+fd2f::6feb:37::8	interjection.goc
+EOF

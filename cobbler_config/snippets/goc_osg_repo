@@ -1,0 +1,14 @@
+## goc_osg_repo (postinstall)
+## Install the RPM for the appropriate OSG YUM repo
+
+echo "Installing OSG software repository ..."
+## The problem here is that there are RHEL5 and RHEL6 versions for OSG 3.1 and 3.2 but RHEL 6 and RHEL 7 versions for OSG 3.3
+##rpm -Uvh http://repo2.goc/osg-release-latest.rpm
+#if $getVar('distro', '') == '5'
+  rpm -Uvh http://repo2.goc/osg/3.2/osg-3.2-el5-release-latest.rpm
+#else if $getVar('distro', '') == '6' or $getVar('distro', '') == 'c6'
+  rpm -Uvh http://repo2.goc/osg/3.3/osg-3.3-el6-release-latest.rpm
+#else if $getVar('distro', '') == 'c7'
+  ## There's no osg-release package for RHEL/CentOS 7 yet, so hope this works
+  rpm -Uvh http://repo2.goc/osg/3.3/osg-3.3-el7-release-latest.rpm
+#end if

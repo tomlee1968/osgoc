@@ -1,0 +1,65 @@
+
+    # Color prompt, using some code stolen from Gentoo's
+    # /etc/bash/bashrc -- thomlee 2008/08/06
+
+    # Set colorful PS1 only on colorful terminals.
+
+    # dircolors --print-database uses its own built-in database
+    # instead of using /etc/DIR_COLORS.  Try to use the external file
+    # first to take advantage of user additions.  Use internal bash
+    # globbing instead of external grep binary.
+
+    use_color=
+    safe_term=${TERM//[^[:alnum:]]/?}   # sanitize TERM
+    if [[ -f /etc/DIR_COLORS ]] ; then
+        match_lhs=$(</etc/DIR_COLORS)
+    elif type -p dircolors >/dev/null ; then
+        match_lhs=$(dircolors --print-database)
+    else
+        match_lhs=""
+    fi
+    [[ $'\n'${match_lhs} == *$'\n'"TERM "${safe_term}* ]] && use_color=true
+
+    # This stuff should make things a bit more user-friendly -- thomlee 2008/08/06
+
+    csi='\033['
+    cstart="\[${csi}"
+    cend="m\]"
+    reset="${cstart}${cend}"
+    black="${cstart}30${cend}"
+    dred="${cstart}31${cend}"
+    dgreen="${cstart}32${cend}"
+    dyellow="${cstart}33${cend}"
+    dblue="${cstart}34${cend}"
+    dmagenta="${cstart}35${cend}"
+    dcyan="${cstart}36${cend}"
+    lgray="${cstart}37${cend}"
+    dgray="${cstart}01;30${cend}"
+    red="${cstart}01;31${cend}"
+    green="${cstart}01;32${cend}"
+    yellow="${cstart}01;33${cend}"
+    blue="${cstart}01;34${cend}"
+    magenta="${cstart}01;35${cend}"
+    cyan="${cstart}01;36${cend}"
+    white="${cstart}01;37${cend}"
+
+    if [ "${use_color}" ]; then
+        date=$blue
+        host=$magenta
+        dir=$cyan
+        if [[ ${EUID} == 0 ]] ; then
+            user=$red   # The idea here is WARNING!  YOU ARE ROOT!  BE CAREFUL!
+            prompt=$red
+        else
+            user=$green
+            prompt=$green
+        fi
+        alias ls='ls --color=auto'
+        alias grep='grep --colour=auto'
+    fi
+    PS1="$date\D{%F %T %Z}$reset [$user\u$reset@$host\h$reset:$dir\w$reset]$prompt\\\$$reset "
+    unset csi cstart cend reset
+    unset black dred dgreen dyellow dblue dmagenta dcyan lgray
+    unset dgray red green yellow blue magenta cyan white
+    unset date host dir prompt
+    unset use_color safe_term match_lhs

@@ -1,0 +1,295 @@
+## goc_define_volumes
+## Snippet for command section
+
+## Define partitions, with special cases for special servers with
+## special hardware
+
+###############################################################################
+## grandad (devm01): RHEL6 KVM host with odd legacy drives
+###############################################################################
+
+#if $getVar('system_name', '') == 'goc-rhel6-kvmhost-grandad'
+
+  ## Grandad has /dev/sda, a 73 GB RAID-1 array, and /dev/sdb, a 900 GB
+  ## RAID-5 array.  Use /dev/sda for the OS and /dev/sdb for the VM
+  ## space.
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --size=24576 --grow --asprimary
+part /var/lib/libvirt --ondisk=${hdpre}b --label=libvirt --size=1024 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=12288 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=4096 --grow
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048 --grow
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024
+
+###############################################################################
+## vanheusen (osg-xd): OSG-XD submit node
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-generic-vanheusen'
+
+  ## This server has these drives:
+  ##  /dev/sda, the main onboard RAID 5 array
+  ##  /dev/sdb, a 100 GB SSD
+  ##  /dev/sdc, an external SAS RAID 10 array
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --size=24576 --grow --asprimary
+part /var/lib/condor --ondisk=${hdpre}b --label=condor --size=1024 --grow --asprimary
+part /local-scratch --ondisk=${hdpre}c --label=local-scratch --fstype=xfs --size=1024 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=196608
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=32768
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=196608
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=5242880 --grow
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=40960
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=32768
+
+###############################################################################
+## winston (iuhtc): IUHTC submit node
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-generic-winston'
+
+  ## This server has these drives:
+  ##  /dev/sda, the main onboard RAID 5 array
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --size=24576 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=196608
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=32768
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=32768
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=32768
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=32768
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=32768
+
+###############################################################################
+## otis (vm08): Was osg-xsede, then irods, then vm08
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-kvmhost-otis'
+
+  ## This server has these drives:
+  ##  /dev/sda, a 28 TB external storage array
+  ##  /dev/sdb, a 600 GB internal RAID array
+
+  ## Partitions
+part /boot --ondisk=${hdpre}b --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}b2 --ondisk=${hdpre}b --size=24576 --grow --asprimary
+part pv.${hdpre}a1 --ondisk=${hdpre}a --size=1024 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}b2
+volgroup vg1 pv.${hdpre}a1
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap  --fstype=swap --size=98304
+logvol /     --vgname=vg0 --name=slash --fstype=ext4 --size=32768
+logvol /var  --vgname=vg0 --name=var   --fstype=ext4 --size=196608 --grow
+logvol /home --vgname=vg0 --name=home  --fstype=ext4 --size=32768
+logvol /opt  --vgname=vg0 --name=opt   --fstype=ext4 --size=43308
+logvol /usr  --vgname=vg0 --name=usr   --fstype=ext4 --size=32768
+logvol /tmp  --vgname=vg0 --name=tmp   --fstype=ext4 --size=32768
+logvol /var/lib/libvirt --vgname=vg1 --name=vm --fstype=xfs --size=1024 --grow
+
+###############################################################################
+## bushido (psvm01): Perfsonar VM host
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-kvmhost-bushido'
+
+  ## This server has these drives:
+  ##  /dev/sde, a 1 TB internal RAID 1 array
+  ##  /dev/sdf, a 15 TB internal RAID 6 array
+
+  ## Partitions
+part /boot/efi --ondisk=${hdpre}e --label=/boot/efi --fstype=vfat --size=512 --asprimary
+part /boot --ondisk=${hdpre}e --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}e2 --ondisk=${hdpre}e --size=24576 --grow --asprimary
+part pv.${hdpre}f1 --ondisk=${hdpre}f --size=1024 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}e2
+volgroup vg1 pv.${hdpre}f1
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap  --fstype=swap --size=131072
+logvol /     --vgname=vg0 --name=slash --fstype=ext4 --size=32768
+logvol /var  --vgname=vg0 --name=var   --fstype=ext4 --size=196608 --grow
+logvol /home --vgname=vg0 --name=home  --fstype=ext4 --size=32768
+logvol /opt  --vgname=vg0 --name=opt   --fstype=ext4 --size=32768
+logvol /usr  --vgname=vg0 --name=usr   --fstype=ext4 --size=32768
+logvol /tmp  --vgname=vg0 --name=tmp   --fstype=ext4 --size=32768
+logvol /var/lib/libvirt --vgname=vg1 --name=vm --fstype=xfs --size=1024 --grow
+
+###############################################################################
+## bundy -- hardware for BDII
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-rhel5-32-generic-bundy'
+
+  ## Bundy has a 292 GB RAID 5 array and that's it.  But it has a
+  ## /usr/local logical volume, and that and /home take up most of the
+  ## space.
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --label=raid1 --size=24576 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=4096
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=98304
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=4096
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=32768
+logvol /usr  --vgname=vg0 --name=usr  --fstype=ext4 --size=16384
+logvol /usr/local  --vgname=vg0 --name=usr_local  --fstype=ext4 --size=86016 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=16384
+logvol /bak  --vgname=vg0 --name=bak  --fstype=ext4 --size=16384
+
+###############################################################################
+## catcher -- Swamp-in-a-box
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-generic-catcher'
+
+  ## Catcher has a 9000 GB RAID 5 array. But for purposes of SIAB, we want
+  ## most of the space in /usr/local.
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --label=raid1 --size=24576 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=4096 --grow
+#logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=98304
+#logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=4096
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=32768
+#logvol /usr  --vgname=vg0 --name=usr  --fstype=ext4 --size=16384
+#logvol /usr/local  --vgname=vg0 --name=usr_local  --fstype=ext4 --size=86016 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=16384
+#logvol /bak  --vgname=vg0 --name=bak  --fstype=ext4 --size=16384
+
+###############################################################################
+## riley -- Swamp-in-a-Box ITB
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-centos6-generic-riley'
+
+  ## Riley has two 73 GB drives in a RAID 1 configuration and four 280 GB
+  ## drives in a RAID 5 array. The /opt filesystem must be at least 2 GB.
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --label=raid1 --size=24576 --grow --asprimary
+part pv.${hdpre}b1 --ondisk=${hdpre}b --label=raid5 --size=24576 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2 pv.${hdpre}b1
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=8192
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=4096 --grow
+#logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048
+#logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=4096
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=2048
+#logvol /usr  --vgname=vg0 --name=usr  --fstype=ext4 --size=16384
+#logvol /usr/local  --vgname=vg0 --name=usr_local  --fstype=ext4 --size=86016 --grow
+#logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=16384
+logvol /var/log --vgname=vg0 --name=var_log --fstype=ext4 --size=16384
+
+###############################################################################
+## jazmine -- generic RHEL6 host
+###############################################################################
+
+#else if $getVar('system_name', '') == 'goc-rhel6-generic-jazmine'
+
+  ## Like Grandad, Jazmine has /dev/sda, a 73 GB RAID-1 array, and
+  ## /dev/sdb, a 900 GB RAID-5 array.  Use /dev/sda for the OS and
+  ## /dev/sdb for extra space as one might need for /var.
+
+  ## Partitions
+part /boot --ondisk=${hdpre}a --label=/boot --fstype=ext3 --size=1024 --asprimary
+part pv.${hdpre}a2 --ondisk=${hdpre}a --label=raid1 --size=24576 --grow --asprimary
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=12288 --grow
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048 --grow
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024
+
+###############################################################################
+## The general case
+###############################################################################
+
+#else
+
+  ## Partitions
+part /boot      --ondisk=${hdpre}a --label=/boot      --fstype=ext3 --size=1024         --asprimary
+part pv.${hdpre}a2    --ondisk=${hdpre}a                                  --size=24576 --grow --asprimary
+
+  ## Stemcells have an extra /dev/?db that is mounted as /usr/local.
+  #if $getVar('stemcell', '')
+part /usr/local --ondisk=${hdpre}b --label=/usr/local --fstype=ext4 --size=1000  --grow --asprimary
+  #end if
+
+  ## LVM volume groups
+volgroup vg0 pv.${hdpre}a2
+
+  ## LVM logical volumes
+  #if $getVar('kvmhost', '')
+
+  ## KVM hosts in general give most of their space to the VMs.
+
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=32768
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=4096
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024
+logvol /var/lib/libvirt --vgname=vg0 --name=vm --fstype=ext4 --size=8192 --grow
+
+  #else
+
+  ## Anything that isn't a KVM host (including stemcells) gets its LVs
+  ## from here.
+
+logvol swap  --vgname=vg0 --name=swap --fstype=swap --size=2048
+logvol /     --vgname=vg0 --name=root --fstype=ext4 --size=32768 --grow
+logvol /var  --vgname=vg0 --name=var  --fstype=ext4 --size=4096 --grow
+logvol /home --vgname=vg0 --name=home --fstype=ext4 --size=2048 --grow
+logvol /opt  --vgname=vg0 --name=opt  --fstype=ext4 --size=2048
+logvol /tmp  --vgname=vg0 --name=tmp  --fstype=ext4 --size=1024
+
+  #end if
+#end if

@@ -1,0 +1,499 @@
+## Packages are included by just listing their names, one per line.  You can
+## exclude packages that would otherwise be included by prefixing their names
+## with '-'.  In at least some distros, packages are organized into groups, and
+## you can include a group by referring to it with a '@' prefixed to its name.
+## You can explicitly exclude an entire group by prefixing it with a '-' too,
+## before the '@'.
+
+## To see a list of packages in a distro (a Red Hat one, anyway), go to the
+## distro's home directory, enter the repodata subdirectory, and look for the
+## *comps.xml file.
+
+## This XML file describes how Anaconda should treat the package groups, which
+## are denoted with <group> tags.  Each group has a <default> tag containing
+## either 'true' or 'false', which specifies whether this group is included by
+## default when installing the distro.  'true' means that the group will be
+## included unless you explicitly say not to ('-@group'), and 'false' means
+## that the group won't be included unless you explicitly include it
+## ('@group').  You can specify either the <id> or the <name> of the group
+## ('@directory-client' and '@Directory Client' are equivalent).
+
+## You'll have to scroll past all the language-specific localization strings to
+## get to the <packagelist> section for that group, then read the <packagereq>
+## tags.  Each <packagereq> has a 'type' attribute and contains the package
+## name.
+
+## There are 3 types of packages: mandatory, default and optional.  Mandatory
+## means that if you include this group, you get this package no matter what,
+## default means you get it unless you say otherwise ('-package'), and optional
+## means you *don't* get it unless you say otherwise ('package').
+
+## Therefore, if you don't specify anything in the %packages section, you will
+## get every package marked "type='default'" or "type='mandatory'" from every
+## group marked "<default>true</default>", and nothing else.  Anything from
+## default groups marked optional, and anything from non-default groups, will
+## not be installed.
+
+## There is one special group: 'core'.  Not only is 'core' included by default,
+## you have to do something special if you don't want to include it.  It's
+## usually really bad for the bootability and functionality of your OS if you
+## exclude it, though.  You can include only the 'core' group if you want the
+## smallest possible installation, though.  You can, of course, exclude
+## individual packages from the 'core' group as long as they're not marked
+## 'mandatory'.
+
+## Note that Anaconda can't install any of these unless they're in a repository
+## that it knows about, and it only knows about repositories that are included
+## from the very beginning -- that is, they must be included by the Cobbler
+## distro, profile, or system that is in use.  If a package comes from a repo
+## that isn't brought in from the start by one of those Cobbler entities,
+## Anaconda will silently ignore that package.  If that's happening, you'll
+## have to either add the repo to the distro/profile/system in Cobbler, or have
+## something in the postinstall script (perhaps Puppet) add the repo and then
+## install the package.
+
+#set arch=$getVar('arch', '')
+#set distro=$getVar('distro', '')
+#set stemcell=$getVar('stemcell', '')
+#set system_name=$getVar('system_name', '')
+#set virtual=$getVar('virtual', '')
+#set vmwhost=$getVar('vmwhost', '')
+
+%packages
+
+###############################################################################
+## Package list for RHEL 5
+###############################################################################
+
+#if $distro == '5'
+@Administration Tools
+
+-pirut
+
+@Base
+
+-NetworkManager
+-bluez-utils
+-ccid
+-cpuspeed
+-dhcpv6-client
+-dmraid
+-irda-utils
+-mdadm
+-pcmciautils
+psacct
+redhat-lsb
+-rhn-check
+-rhn-setup
+-rp-pppoe
+-smartmontools
+-subscription-manager
+-wireless-tools
+-yum-rhn-plugin
+
+@Core
+  #if $arch == 'i386'
+kernel-PAE
+kernel-PAE-devel
+-kernel
+-kernel-devel
+  #end if
+
+-sysklogd
+
+-@Development Tools
+
+gcc
+glibc-devel
+glibc-headers
+kernel-devel
+kernel-headers
+
+-@Dialup Networking Support
+
+-isdn4k-utils
+
+-@Dialup Networking Support
+
+-@DNS Name Server
+
+dnsmasq
+
+@Editors
+
+-emacs-leim
+-emacspeak
+emacs
+emacs-nox
+vim-enhanced
+vim-X11
+
+-@Games and Entertainment
+
+-@GNOME Desktop Environment
+
+-@Graphical Internet
+
+-@Graphics
+
+-@KDE (K Desktop Environment)
+
+-@Mail Server
+
+postfix
+-sendmail
+-ssmtp
+
+-@Office/Productivity
+
+-@Printing Support
+
+-@Sound and Video
+
+@Text-based Internet
+
+-fetchmail
+-mutt
+-slrn
+lynx
+
+-@System Tools
+
+ntp
+sssd
+sssd-tools
+sssd-client
+
+-@X Window System
+
+-vnc-server
+-wdaemon
+xorg-x11-apps
+xorg-x11-server-utils
+xorg-x11-xauth
+
+  #if $vmwhost
+    # From the virtualization repo
+-@KVM
+
+kvm-qemu-img
+  #end if
+
+# I don't know where these come from, but we want them
+yum-downloadonly
+yum-utils
+rsync
+
+# I don't know where these come from, but we don't want them
+-rhn-client-tools
+-rhnsd
+
+# EPEL packages
+augeas
+augeas-libs
+facter
+munin-node
+puppet
+rpmconf
+ruby-augeas
+ruby-shadow
+syslog-ng
+
+# Local packages
+##cilogon-ca-certs
+confsync-dyndns
+goc-ca-cert
+##osg-ca-certs
+goc-crls
+osupdate
+gocloc
+munin_puppet
+  #unless $virtual
+munin_gocipmi
+munin_ipc
+  #end unless
+  #if $stemcell
+gocvminsta
+  #end if
+#end if
+
+###############################################################################
+## Package list for RHEL/CentOS 6
+###############################################################################
+
+#if $distro == '6' or $distro == 'c6'
+-@Applications
+emacs
+
+@Base
+authconfig
+bind-utils
+-bluez-utils
+-cpuspeed
+-dmraid
+logwatch
+-mdadm
+ntp
+oddjob
+openssh-clients
+-pcmciautils
+psacct
+redhat-lsb
+-smartmontools
+vim-enhanced
+wget
+-wireless-tools
+yum-plugin-downloadonly
+yum-presto
+
+-@Client management tools
+
+-@Console internet tools
+dnsmasq
+-fetchmail
+ftp
+-mutt
+
+@Core
+openssh-server
+-subscription-manager
+sudo
+
+-@Debugging tools
+
+-@Desktop
+-NetworkManager
+-vnc-server
+
+-@Development tools
+make
+mercurial
+patch
+
+-@Dial-up Networking Support
+-isdn4k-utils
+-rp-pppoe
+
+@Directory Client
+certmonger
+-nscd
+-openldap-clients
+-pam_ldap
+sssd
+sssd-tools
+sssd-client
+
+-@E-mail server
+-dovecot
+postfix
+-sendmail
+-spamassassin
+-ssmtp
+
+@Emacs
+emacs-nox
+
+  #unless $stemcell
+@Fonts
+dejavu-sans-fonts
+  #end unless
+
+-@General Purpose Desktop
+vim-X11
+
+-@Graphics Creation Tools
+
+-@Hardware Monitoring Utilities
+-smartmontools
+
+-@KDE Desktop
+
+-@Large Systems Performance
+
+@Network file system client
+autofs
+
+-@Network Infrastructure Server
+
+-@Networking Tools
+nc
+rsync
+
+-@Performance Tools
+
+@Perl Support
+perl-Date-Calc
+perl-Date-Manip
+
+perl-XML-Twig
+
+-@Printing Client
+
+@Server Platform
+redhat-lsb
+
+-@server-policy
+
+-@Smart card support
+-ccid
+
+-@System Administration Tools
+symlinks
+
+-@X Window System
+-wdaemon
+xorg-x11-apps
+xorg-x11-server-utils
+xorg-x11-xauth
+
+  #unless $stemcell
+## Extra packages
+urw-fonts
+  #end unless
+
+  #unless $virtual
+## Packages for physical servers only
+OpenIPMI
+OpenIPMI-libs
+  #end unless
+
+## EPEL packages
+augeas
+augeas-libs
+facter
+munin-node
+puppet
+rpmconf
+ruby-augeas
+ruby-shadow
+
+## Local packages
+##cilogon-ca-certs
+confsync-dyndns
+goc-ca-cert
+gociptables
+##osg-ca-certs
+goc-crls
+osupdate
+gocloc
+munin_puppet
+
+  #unless $virtual
+munin_gocipmi
+munin_ipc
+  #end unless
+
+  #if $stemcell
+gocvminsta
+  #end if
+
+  #if $system_name == 'goc-centos6-generic-vanheusen'
+xfsprogs
+xfsdump
+  #end if
+
+###############################################################################
+## CentOS 7 package list
+###############################################################################
+
+#else if $distro == 'c7'
+authconfig
+autofs
+chrony
+dnsmasq
+emacs-nox
+ftp
+htop
+logwatch
+lynx
+## mercurial
+mariadb-libs
+mlocate
+nc
+net-tools
+ntp
+openldap-clients
+perl-Date-Calc
+perl-XML-Twig
+psmisc
+redhat-lsb
+rsync
+sssd
+sssd-client
+sssd-tools
+subversion
+symlinks
+tcpdump
+telnet
+vim-enhanced
+wget
+xorg-x11-apps
+xorg-x11-server-utils
+xorg-x11-xauth
+yum-utils
+
+## Puppet, Munin, and other EPEL things
+augeas
+augeas-libs
+facter
+munin-node
+puppet
+rpmconf
+ruby-augeas
+ruby-shadow
+
+## GOC-specific
+confsync-dyndns-services-goc
+goc-ca-cert
+goc-crls
+gocloc
+iptables-services-goc
+munin_puppet
+osupdate
+
+  #unless $virtual
+munin_gocipmi
+munin_ipc
+  #end unless
+
+  #if $stemcell
+gocvminsta
+  #end if
+
+-aic94xx-firmware
+-iprutils
+-ivtv-firmware
+-iwl100-firmware
+-iwl105-firmware
+-iwl135-firmware
+-iwl1000-firmware
+-iwl2000-firmware
+-iwl2030-firmware
+-iwl3160-firmware
+-iwl3945-firmware
+-iwl4965-firmware
+-iwl5000-firmware
+-iwl5150-firmware
+-iwl6000-firmware
+-iwl6000g2a-firmware
+-iwl6000g2b-firmware
+-iwl6050-firmware
+-iwl7260-firmware
+-iwl7265-firmware
+-libnl3-cli
+-libteam
+-lsscsi
+-NetworkManager
+-NetworkManager-glib
+-NetworkManager-team
+-NetworkManager-tui
+-rdma
+-teamd
+#end if
+
+## Evidently the RHEL 5 Anaconda doesn't expect (or like) an %end statement at
+## the end of the packages section. For RHEL 6 it's optional, but RHEL/CentOS 7
+## requires it.
+#if $distro == 'c7'
+%end
+#end if

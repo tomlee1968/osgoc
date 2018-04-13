@@ -1,0 +1,60 @@
+## goc_configure_automount (postinstall)
+## Configure automount to behave conveniently
+
+## Meaning of the options:
+## Options for automount (with leading "-"):
+## -fstype=nfs: Specifies that the filesystem type is NFS
+
+## Options affecting the mount process:
+## bg: Mount attempts after the first are made in the background, so shell prompt returns if there is a timeout
+## retry=0: Number of minutes to continue retrying mounts before giving up
+
+## Options affecting timeouts during file operations:
+## retrans=0: Number of minor timeouts before a major timeout occurs
+## hard: Major timeouts enter an infinite retry loop (default behavior actually)
+## intr: Makes the retry loop interruptible
+
+## Options affecting filesystem behavior:
+## nodev: Device files on the mounted filesystem aren't interpreted as device files
+## nosuid: Setuid and setgid bits on files on the remote filesystem are ignored
+
+## The goal is to prevent uninterruptible hangs.
+
+## If a mount doesn't succeed right away, it normally keeps trying
+## uninterruptibly in the foreground for 2 minutes before giving up.
+## Using the "bg" option makes it retry in the background, but by
+## default it then keeps retrying for 10000 minutes before giving up.
+## Setting "retry=0" makes it give up immediately, alerting the user
+## that something is wrong and giving her the ability to retry manually
+## if desired.
+
+## If something goes wrong with a file operation after a successful
+## mount, usually there is a minor timeout followed by an automatic
+## retransmission of the operation.  After 5 (UDP) or 2 (TCP) minor
+## timeouts, it declares a major timeout, reports "Server not
+## responding" to the console, and continues retrying indefinitely and
+## uninterruptibly.  Setting "retrans=0" causes a major timeout to
+## occur immediately, and setting "intr" makes the retry loop
+## interruptible.  This is what we have here.  It is also possible to
+## set "soft" rather than "hard,intr", which causes a major timeout to
+## report an I/O error to the calling program and exit without retrying
+## further, but I have found that unless there's been a real problem
+## (destination server crashed, network cable unplugged, etc.), there
+## is usually eventual success, so it's usually better to have an
+## infinite but interruptible retry loop than to give up automatically
+## (possibly causing loss of data right before the problem would have
+## fixed itself).  Even if there is a real problem, I find that it's
+## better to loop indefinitely but interruptibly, allowing someone to
+## fix the problem, than to have a built-in timed exit that could cause
+## loss of data before the problem can be fixed.  I think "soft" should
+## be called "eventual uncontrollable data loss."  "Hard" with "intr"
+## gives you console control over what happens, at least.
+
+## Make sure autofs is installed
+if ! rpm -q autofs >&/dev/null; then
+   yum -y -q install autofs
+fi
+
+# Configure automount
+echo "Configuring autofs ..."
+sed -i -re '/^[[:space:]]*opts=/c\opts="-fstype=nfs,hard,intr,nodev,nosuid,bg,retry=0,retrans=0"' /etc/auto.net

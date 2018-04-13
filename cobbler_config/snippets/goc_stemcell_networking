@@ -1,0 +1,83 @@
+## goc_stemcell_networking (postinstall)
+## Set up networking for a stemcell rebuild
+
+echo "Installing stemcell network settings ..."
+cat <<"EOF" > /etc/sysconfig/network
+# Written by Cobbler/Anaconda kickstart script
+
+# If you see "HOSTNAME=stemcell.grid.iu.edu" below, this file has not
+# been modified since the stemcell image was installed.  This is bad.
+# Run an install script as soon as possible, or you may be preventing
+# others from creating VMs from stemcell images.
+
+NETWORKING=yes
+NETWORKING_IPV6=yes
+HOSTNAME=stemcell.grid.iu.edu
+GATEWAY=129.79.53.1
+IPV6_DEFAULTGW=2001:18e8:2:6::1%eth0
+EOF
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-eth0
+# Written by Cobbler/Anaconda kickstart script
+
+# If you see "IPADDR=129.79.53.89" and/or
+# "IPV6ADDR=2001:18e8:2:6::129/64" below, this file has not been
+# modified since the stemcell image was installed.  This is bad.  Run
+# an install script as soon as possible, or it will not be possible
+# for another VM to run using these IPs as long as this one is online.
+# This may prevent others from creating VMs from stemcell images.
+
+DEVICE="eth0"
+BOOTPROTO=static
+ONBOOT=yes
+IPADDR=129.79.53.89
+NETMASK=255.255.255.0
+IPV6INIT=yes
+IPV6ADDR=2001:18e8:2:6::129/64
+EOF
+
+cat <<"EOF" > /etc/sysconfig/network-scripts/ifcfg-eth1
+# Written by Cobbler/Anaconda kickstart script
+
+# If you see "BOOTPROTO=dhcp" below, this file has not been modified
+# since the stemcell image was installed.  This is bad.  Run an
+# install script as soon as possible, or you may be preventing others
+# from creating VMs from stemcell images.
+
+DEVICE="eth1"
+BOOTPROTO=dhcp
+ONBOOT=yes
+IPV6INIT=yes
+EOF
+
+cat <<"EOF" > /etc/resolv.conf
+# Written by Cobbler/Anaconda kickstart script
+
+# If you see any nameservers other than 127.0.0.1 listed below, this
+# file has not been modified since the stemcell image was installed.
+# This is very strange, as Puppet is supposed to modify it to use no
+# nameservers other than 127.0.0.1.
+
+search goc grid.iu.edu uits.indiana.edu indiana.edu
+nameserver 127.0.0.1
+nameserver 192.168.96.4
+nameserver 192.168.97.12
+nameserver 129.79.1.1
+nameserver 129.79.5.100
+EOF
+
+cat <<"EOF" > /etc/hosts
+# Written by Cobbler/Anaconda kickstart script
+
+# If there are no entries below other than those for localhost and
+# stemcell, this file has not been modified since the stemcell image
+# was installed.  This is bad.  Run an install script as soon as
+# possible, or you may be preventing others from creating VMs from
+# stemcell images.
+
+127.0.0.1	localhost.localdomain localhost lh
+129.79.53.89	stemcell.grid.iu.edu stemcell
+
+::1		localhost lh
+2001:18e8:2:6::129	stemcell.grid.iu.edu stemcell
+EOF

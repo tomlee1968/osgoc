@@ -1,0 +1,5 @@
+## goc_configure_syslog-ng (postinstall)
+## Configure syslog-ng
+
+# Configure syslog-ng
+install -m0644 -o root -g root /root/stemcellize/syslog-ng.conf /etc/syslog-ng

@@ -1,0 +1,21 @@
+## goc_configure_svn (postinstall)
+## Install cert and config file so Subversion will work (GOC install
+## script framework requires it)
+
+## Note: This references group "goc", which is from LDAP, so in RHEL5,
+## nss_ldap must be configured, and in RHEL6, sssd must be configured
+## and running, before this snippet appears.
+
+# Somehow despite multiple attempts Anaconda still doesn't have
+# Subversion installed
+echo "Installing subversion ..."
+if ! rpm -q subversion > /dev/null; then
+    yum -y -q install subversion
+fi
+
+# Set up SVN cert
+echo "Configuring subversion ..."
+mkdir -p -m0755 /etc/grid-security/host
+install -m0640 -o root -g goc /root/stemcellize/svn_bundle.p12 /etc/grid-security/host/
+install -m0644 -o root -g root /root/stemcellize/incommon_intermediate_bundle.pem /etc/pki/tls/certs/
+install -m0640 -o root -g goc /root/stemcellize/svn_servers /etc/subversion/servers

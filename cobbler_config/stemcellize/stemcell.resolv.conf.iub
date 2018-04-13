@@ -1,0 +1,5 @@
+search goc grid.iu.edu uits.indiana.edu indiana.edu
+nameserver 192.168.96.4
+#nameserver 192.168.97.12
+nameserver 129.79.1.1
+nameserver 129.79.5.100

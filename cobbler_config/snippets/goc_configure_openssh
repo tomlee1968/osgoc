@@ -1,0 +1,60 @@
+## goc_configure_openssh (postinstall)
+## Install the GOC version of OpenSSH and configure it
+
+# Install the GOC version of OpenSSH, which has certificate support.
+echo "Installing OpenSSH ..."
+yum -y -q --disablerepo=* --enablerepo=goc-internal* update openssh
+
+pushd /etc/ssh > /dev/null
+
+## Create host keypairs that don't already exist -- for newer versions of
+## openssh, 'ssh-keygen -A' will automatically do this, but they have to be
+## really new.
+#raw
+  for keytype in rsa1 rsa dsa; do
+    case "$keytype" in
+      rsa1)
+	infix=key
+	  bits=1024
+	  ;;
+	rsa)
+	  infix=rsa_key
+	  bits=2048
+	  ;;
+	dsa)
+	  infix=dsa_key
+	  bits=1024
+	  ;;
+    esac
+    keyfile=ssh_host_$infix
+    if [[ ! -e $keyfile ]] || [[ ! -e $keyfile.pub ]]; then
+      rm -f $keyfile $keyfile.pub
+      ssh-keygen -q -t $keytype -b $bits -N '' -C "stemcell.grid.iu.edu" -f $keyfile
+    fi
+  done
+  unset keytype infix bits keyfile
+#end raw
+
+## Create an ssh_known_hosts file containing the CA's public key.  When an SSH
+## client on this host connects to a remote server, this ssh_known_hosts file
+## will allow the client to recognize servers whose host certificates have been
+## signed by the CA's private key, just as this server's own certificate is
+## signed in the lines below.
+echo "# SSH public host key file" > ssh_known_hosts
+echo -n "@cert-authority * " >> ssh_known_hosts
+cat /root/stemcellize/osgops_ca.pub >> ssh_known_hosts
+chmod 0644 ssh_known_hosts
+
+## Get the host certificate signed, so the installer isn't immediately faced
+## with an unknown-cert question.
+cat ssh_host_rsa_key.pub | ssh -i /root/.ssh/id_goc.dsa goc@cert.goc /opt/sbin/signhostkey > ssh_host_rsa_key-cert.pub
+
+## Install the local CA public key so that the sshd_config file can refer to
+## it; this enables users whose SSH certificates are signed by the local CA to
+## log in to this host without having to install their public key.
+install -m 0644 -o root -g root /root/stemcellize/osgops_ca.pub ./ssh_trusted_user_ca_keys
+
+# Configure sshd to read the CA key and use the host certificate.
+install -m 0600 -o root -g root /root/stemcellize/sshd_config .
+
+popd > /dev/null

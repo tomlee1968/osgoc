@@ -1,0 +1,7 @@
+## goc_configure_logwatch (postinstall)
+## Configures logwatch to handle /var/log/fw
+
+# Configure logwatch
+echo "Configuring logwatch ..."
+install -m0644 -o root -g root /root/stemcellize/logwatch_logfiles_iptables.conf /etc/logwatch/conf/logfiles/iptables.conf
+install -m0644 -o root -g root /root/stemcellize/logwatch_services_iptables.conf /etc/logwatch/conf/services/iptables.conf

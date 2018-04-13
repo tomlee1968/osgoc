@@ -1,0 +1,29 @@
+## System services to enable/disable, determined by the distro/version
+
+## As usual, we're referring to the variable 'distro,' defined in the
+## system record in Cobbler, and its values are:
+##
+## 5 = RHEL 5
+## 6 = RHEL 6
+## c6 = CentOS 6
+## c7 = CentOS 7
+## Others are TBA
+
+##############################################################################
+## RHEL/CentOS 5/6
+##############################################################################
+
+#if $getVar('distro', '') == '5' or $getVar('distro', '') == '6' or $getVar('distro', '') == 'c6'
+  #if $getVar('virtual', '')
+services --disabled=anacron,avahi-daemon,avahi-dnsconfd,conman,cups,dnsmasq,firstboot,gpm,haldaemon,ip6tables,ipmi,iptables,iscsi,iscsid,kdump,kudzu,mcstrans,multipathd,netconsole,netfs,netplugd,NetworkManager,nfslock,nscd,ntpdate,pcscd,puppet,radvd,readahead_early,readahead_later,rdisc,restorecond,rhnsd,rhsmcertd,rpcgssd,saslauthd,setroubleshoot,svnserve,winbind,wpa_supplicant,xfs,xinetd,ypbind,yum-updatesd --enabled=acpid,atd,auditd,autofs,crond,irqbalance,lvm2-monitor,messagebus,munin-node,network,nfs,ntpd,oddjobd,portreserve,postfix,psacct,rpcbind,rpcidmapd,rsyslog,sshd,sssd,sysstat,udev-post
+  #else
+services --disabled=anacron,avahi-daemon,avahi-dnsconfd,conman,cups,dnsmasq,firstboot,gpm,haldaemon,ip6tables,iptables,iscsi,iscsid,kdump,kudzu,mcstrans,multipathd,netconsole,netfs,netplugd,NetworkManager,nfslock,nscd,ntpdate,pcscd,puppet,radvd,readahead_early,readahead_later,rdisc,restorecond,rhnsd,rhsmcertd,rpcgssd,saslauthd,setroubleshoot,svnserve,winbind,wpa_supplicant,xfs,xinetd,ypbind,yum-updatesd --enabled=acpid,atd,auditd,autofs,crond,ipmi,irqbalance,lvm2-monitor,messagebus,munin-node,network,nfs,ntpd,oddjobd,portreserve,postfix,psacct,rpcbind,rpcidmapd,rsyslog,sshd,sssd,sysstat,udev-post
+  #end if
+
+##############################################################################
+## RHEL/CentOS 7
+##############################################################################
+
+#else if $getVar('distro', '') == '7' or $getVar('distro', '') == 'c7'
+services --disabled=avahi-daemon,cups,kdump,ntpd,puppet --enabled=autofs,chronyd,confsync-dyndns,dnsmasq,iptables,munin-node
+#end if

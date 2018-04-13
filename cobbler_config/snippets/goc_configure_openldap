@@ -1,0 +1,6 @@
+## goc_configure_openldap (postinstall)
+## Configure OpenLDAP (RHEL6)
+
+# This tells OpenLDAP where to find the CA certs for making TLS connections to LDAP
+echo "Configuring OpenLDAP so it can contact our LDAP server via TLS ..."
+sed -i -re 's/^[[:space:]]*TLS_CACERTDIR.*$/TLS_CACERTDIR \/etc\/pki\/ldap/' /etc/openldap/ldap.conf

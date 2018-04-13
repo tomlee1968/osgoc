@@ -1,0 +1,35 @@
+
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2010/12/08
+# last modified 2010/12/08
+
+# This file will be synchronized using puppet across all servers and should
+# therefore contain only rules that should apply to all GOC servers.
+
+# This file contains a chain and a rule for allowing Dell OpenManage access
+# from certain hosts.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Subchains
+###############################################################################
+
+# dell_om_known_ok: Allow Dell OpenManage connections (known hosts)
+$ITF -N dell_om_known_ok
+$ITF -A dell_om_known_ok -p tcp --dport 1311 -j known_ok
+$ITF -A dell_om_known_ok -j RETURN
+
+###############################################################################
+# Rules
+###############################################################################
+
+# Allow Dell OpenManage from hosts on the whitelist
+$ITFAI -j dell_om_known_ok
+

@@ -1,0 +1,55 @@
+centos7:
+
+Problem: The console screen goes into a strange mode (right after
+"Reached target Basic System") that I've never seen in any previous
+RHEL/CentOS installation.  There is no local echoing of characters,
+and line feeds don't include carriage returns.  It apparently makes
+the ncurses installation process impossible.  Using cmdline
+installation for now.
+
+  Attempt: I've gone into
+  /var/www/cobbler/ks_mirror/centos-7.0-x86_64/isolinux/isolinux.cfg
+  and added "xdriver=vesa nomodeset" to the append line of the first
+  boot option.
+
+  Worked: No apparent effect.
+
+  Attempt: The boot disk runs systemd; I unpacked the initrd.img (an
+  xz-compressed cpio archive) and examined it.
+
+  Discovered: The command /usr/lib/systemd/systemd-vconsole-setup is
+  what changes the font; it takes settings such as KEYMAP and FONT
+  from /etc/vconsole.conf.  But it's not the culprit.  I think so many
+  different processes listening on /dev/console (aka /dev/pty/0) is
+  the problem -- they conflict with each other and conspire to put the
+  terminal into a strange mode.  But you know what?
+
+  Solution: Ctrl+Alt+F2, then chroot /mnt/sysimage.  Use another
+  virtual console and the problem goes away.
+
+Problem: In the postinstall script, yum is unable to reach
+yum-internal-c7.goc, because it apparently gets an IPv6 address first,
+and the server isn't listening on IPv6 -- not to mention the fact that
+the system being built isn't using IPv6 either.  Yum seemingly is
+unable to fall back to the IPv4 address.  It may be using a libnss
+hosts request (like 'getent hosts' does), which seems to always return
+an IPv6 address, even though I KNOW there is an IPv4 address in the
+LDAP database; I can see it.  Two avenues of attack present
+themselves: fix what libnss returns, or make it not matter what libnss
+returns.
+
+  Attempt: 'getent ahosts yum-internal-c7.goc' returns both IPv4 and
+  IPv6 addresses, so clearly the system is able to deal with this.
+  But how can I get yum's invocation of libnss to use 'ahosts' rather
+  than 'hosts'?  There doesn't appear to be a way to do that.  I have
+  completely turned off IPv6 networking and the problem persists; it
+  has to do with what the query returns.
+
+  Worked: No effect.
+
+  Attempt: Configuring yum-internal-c7 to listen on both its IPv4 and
+  IPv6 addresses, then attempting to get the stemcell to have both as
+  well.  The first part is easy; all addresses exist in DNS already.
+  The second part consists of both inducing Anaconda to use IPv6
+  addresses and convincing the Cobbler server to respond to DHCPv6
+  requests.

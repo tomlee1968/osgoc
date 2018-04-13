@@ -1,0 +1,6 @@
+## goc_configure_nscd (postinstall)
+## Install nscd config file (only on RHEL5, where it is installed but
+## not used due to history, but not even installed on RHEL6)
+
+# Install that config file
+install -m0644 -o root -g root /root/stemcellize/nscd.conf /etc/

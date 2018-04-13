@@ -1,0 +1,55 @@
+## goc_configure_postfix (postinstall)
+## Configures postfix
+
+# Postfix might not be installed, despite being in the package list
+echo "Configuring postfix ..."
+if ! rpm -q postfix >&/dev/null; then
+  yum -y -q install postfix
+fi
+# Likewise, Anaconda often installs sendmail, despite the fact that
+# it's explicitly excluded in the package list.  It can interfere with
+# postfix (it starts first and uses the same port), so make sure it's
+# not there.  This should work fine -- the "mta" component is
+# mandatory, but postfix provides that, and we've made sure postfix is
+# installed already.
+if rpm -q sendmail >&/dev/null; then
+  yum -y -q remove sendmail
+fi
+
+# Make sure these settings exist in /etc/postfix/main.cf
+smtp_always_send_ehlo=no
+smtp_never_send_ehlo=yes
+disable_vrfy_command=yes
+append_dot_mydomain=no
+smtp_host_lookup=dns,native
+
+for i in smtp_always_send_ehlo smtp_never_send_ehlo disable_vrfy_command append_dot_mydomain smtp_host_lookup; do
+    v=''
+    case "$i" in
+	smtp_always_send_ehlo)
+	    v=no
+	    ;;
+	smtp_never_send_ehlo)
+	    v=yes
+	    ;;
+	disable_vrfy_command)
+	    v=yes
+	    ;;
+	append_dot_mydomain)
+	    v=no
+	    ;;
+	smtp_host_lookup)
+	    v=dns,native
+	    ;;
+    esac
+    if grep -E -q "^[[:space:]]*${i}[[:space:]]*=[[:space:]]*" /etc/postfix/main.cf; then
+	# The setting is found
+	if ! grep -E -q "^[[:space:]]*${i}[[:space:]]*=[[:space:]]*${v}" /etc/postfix/main.cf; then
+	    # It's set to the wrong value -- replace it
+	    sed -i -re "/[[:space:]]*${i}[[:space:]]*=[[:space:]]*/c${i} = ${v}" /etc/postfix/main.cf
+	fi
+    else
+	# The setting isn't found -- append it to the end of the file
+	echo "${i}=${v}" >> /etc/postfix/main.cf
+    fi
+done

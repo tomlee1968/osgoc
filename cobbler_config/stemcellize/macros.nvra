@@ -1,0 +1,2 @@
+%nvra %%{name}-%%{version}-%%{release}.%%{arch}
+%_query_all_fmt %{nvra}

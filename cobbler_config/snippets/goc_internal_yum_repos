@@ -1,0 +1,6 @@
+## goc_internal_yum_repos (postinstall)
+## Install the RPMs for the GOC internal YUM repos
+
+# GOC internal YUM repos
+echo "Installing local YUM repositories ..."
+rpm -Uvh http://yum-internal.goc/yum/goc-internal-repo.rpm

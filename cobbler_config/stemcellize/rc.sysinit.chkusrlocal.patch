@@ -1,0 +1,17 @@
+--- rc.sysinit	2012-05-15 17:34:27.304478000 +0000
++++ rc.sysinit.chkusrlocal	2012-05-15 17:35:31.253481686 +0000
+@@ -464,6 +464,14 @@
+ 	echo
+ fi
+ 
++# TJL 2009/10/07: The mkvm script creates /dev/hdb but can't make partitions or
++# filesystems from outside the guest OS -- this chkusrlocal script sees if
++# /dev/hdb has a partition and makes one if not, creating a filesystem on it
++# and adding it as /usr/local to /etc/fstab
++if [ -f /sbin/chkusrlocal ]; then
++	/sbin/chkusrlocal
++fi
++
+ if [ -f /fastboot ] || strstr "$cmdline" fastboot ; then
+ 	fastboot=yes
+ fi

@@ -1,0 +1,74 @@
+## goc_configure_sssd (postinstall)
+## Configure sssd
+
+## Install sssd if it's not installed
+#raw
+(
+  sssd_rpms=()
+  for rpm in sssd sssd-tools sssd-client; do
+    if ! rpm -q "$rpm" >&/dev/null; then
+      sssd_rpms=("${sssd_rpms[@]}" "$rpm")
+    fi
+  done
+  if [[ ${#sssd_rpms[@]} -gt 0 ]]; then
+    yum -y -q install ${sssd_rpms[@]}
+  fi
+)
+#end raw
+
+## Somehow despite being a mandatory member of the base group AND
+## being explicitly mentioned in the packages list, which shouldn't
+## even be necessary, authconfig STILL manages not to be installed on
+## CentOS 6 by this time!
+if ! rpm -q authconfig >&/dev/null; then
+   yum -y -q install authconfig
+fi
+
+## Make sure NSS and PAM use sssd
+authconfig --disableldap --disableldapauth --disablecache --enablesssd --enablesssdauth --enablemkhomedir --update
+## Apparently this must be done separately from the other authconfig
+## for some reason.
+## authconfig --enablemkhomedir --update
+
+## Install the sssd.conf file from stemcellize -- I don't know why,
+## but authconfig always borks the sssd.conf file (by deleting the
+## 'domains' setting).  -- TJL 2014-05-05
+pushd /root/stemcellize >/dev/null
+install -o root -g root -m 0600 sssd.conf /etc/sssd/
+popd >/dev/null
+
+## Clear any cache that exists
+rm -f /var/lib/sss/db/*
+
+## Make sure sssd starts at boot
+#raw
+if which systemctl >&/dev/null; then
+  systemctl enable sssd.service
+else
+  if ! chkconfig sssd; then
+    chkconfig sssd --level 2345 on
+  fi
+fi
+#end raw
+
+## If we're using systemd, we can't actually start any services under
+## chroot.
+if ! pgrep systemd >/dev/null; then
+  ## Start sssd so we have LDAP groups and users
+  /etc/init.d/sssd start
+
+  ## I don't get this, but we need to look up some LDAP users before
+  ## things work.  Must be at least 2 users, and they must be different.
+  ## (Perhaps it has to be a user who is in the goc group?)
+  id goc >&/dev/null
+  id gocbot >&/dev/null
+  id thomlee >&/dev/null
+
+  ## Test
+  if ! getent -s sss passwd goc >/dev/null; then
+      echo "Can't lookup user goc -- sssd install may have failed"
+  fi
+  if ! getent -s sss group goc >/dev/null; then
+      echo "Can't lookup group goc -- sssd install may have failed"
+  fi
+fi

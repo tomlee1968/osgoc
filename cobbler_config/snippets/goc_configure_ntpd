@@ -1,0 +1,18 @@
+## goc_configure_ntpd (postinstall)
+## Configure ntpd for clients
+
+## There's a VM that acts as the NTP server (ntp.grid.iu.edu), which
+## has an install script
+
+echo "Configuring ntpd ..."
+
+# Make sure there's an /etc/ntp
+if [[ ! -d /etc/ntp ]]; then
+    install -d -m0755 -o root -g root /etc/ntp
+fi
+
+# Install config files
+pushd /root/stemcellize > /dev/null
+install -m0644 -o root -g root ntp.conf /etc/
+install -m0644 -o root -g root step-tickers /etc/ntp/
+popd > /dev/null

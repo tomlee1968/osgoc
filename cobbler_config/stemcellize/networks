@@ -1,0 +1,4 @@
+loopback	127.0.0.0
+iub-vlan-259	129.79.53.0
+link-local	169.254.0.0
+goc-lan		192.168.96.0

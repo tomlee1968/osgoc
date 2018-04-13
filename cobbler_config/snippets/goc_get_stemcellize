@@ -1,0 +1,7 @@
+## goc_get_stemcellize (postinstall)
+## Get the stemcellize tarball and unpack it into /root
+
+# Get stemcellize stuff
+echo "Acquiring installation files ..."
+wget -O /root/stemcellize.tgz http://$server/cobbler/pub/stemcellize.tgz
+tar zxf /root/stemcellize.tgz -C /root

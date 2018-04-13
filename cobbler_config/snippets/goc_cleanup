@@ -1,0 +1,15 @@
+## goc_cleanup (postinstall)
+## Clean up after an install
+
+echo "Cleaning up ..."
+
+# Clean up after ourselves
+pushd /root > /dev/null
+rm -rf stemcellize stemcellize.tgz
+popd > /dev/null
+yum --enablerepo='*' clean all
+rm -f /etc/yum.repos.d/cobbler-config.repo
+rm -rf /var/lib/puppet/clientbucket
+rm -f /root/.bash_history
+## The CentOS 7 build process leaves ifcfg-eth0-1 around somehow
+rm -f /etc/sysconfig/network-scripts/ifcfg-*-1

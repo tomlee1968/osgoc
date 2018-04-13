@@ -1,0 +1,16 @@
+## goc_configure_ldap (postinstall)
+## Configure machine to be an LDAP client
+
+pushd /root/stemcellize > /dev/null
+# LDAP directory manager password
+install -m0600 -o root -g root ldap.secret /etc
+
+## VMware Server 1.x hosts can't use TLS for LDAP, but that will have
+## to be dealt with separately -- perhaps in an RHEL5/VMW host
+## kickstart file, or in a VMware host install script.  The fact is
+## that everything *else* can use TLS for LDAP.  We should just stop
+## using VMware Server 1.x.
+
+# LDAP client config
+install -m0644 -o root -g root ldap.conf.tls /etc/ldap.conf
+popd > /dev/null

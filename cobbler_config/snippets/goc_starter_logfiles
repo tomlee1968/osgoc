@@ -1,0 +1,8 @@
+## goc_starter_logfiles (postinstall)
+
+# Create some empty logfiles so logrotate won't complain
+echo "Initializing certain logfiles without which logrotate will complain ..."
+pushd /var/log > /dev/null
+touch spooler
+touch boot.log
+popd > /dev/null

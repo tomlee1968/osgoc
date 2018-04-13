@@ -1,0 +1,24 @@
+## goc_install_ignored (postinstall)
+## Install RPM packages via YUM that anaconda just plain ignores, even
+## though they're in the packages list in the kickstart file!
+
+echo "Installing XAuth ..."
+if ! rpm -q xorg-x11-xauth >&/dev/null; then
+  yum -y -q install xorg-x11-xauth
+fi
+if ! rpm -q xorg-x11-apps; then
+  yum -y -q install xorg-x11-apps
+fi
+
+#if $getVar('vmtype', '') == 'vmw'
+if ! rpm -q gcc > /dev/null; then
+    echo "Installing GCC so as to be able to compile vmware-guestd ..."
+    yum -y -q install gcc
+fi
+#end if
+
+# This is removed in the package list, but something keeps installing
+# it anyway.
+if rpm -q subscription-manager >&/dev/null; then
+  yum -y -q remove subscription-manager
+fi

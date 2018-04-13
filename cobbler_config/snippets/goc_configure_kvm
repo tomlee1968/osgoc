@@ -1,0 +1,52 @@
+## goc_configure_kvm (postinstall)
+## Set things up for GOC RHEL6 KVM hosts
+
+# This tells libvirt to let anybody in the vm group edit VMs, supposedly
+install -m0644 -o root -g root /root/stemcellize/50-goc-libvirt-remote-access.pkla /etc/polkit-1/localauthority/50-local.d/
+POLXML=/usr/share/polkit-1/actions/org.libvirt.unix.policy
+mv \$POLXML \$POLXML.bak
+perl -w <<EOF > \$POLXML
+use strict;
+use XML::Twig;
+
+my \\$twig = XML::Twig->new(pretty_print => 'indented');
+\\$twig->parsefile('\$POLXML.bak');
+my \\$root = \\$twig->root();
+foreach my \\$action (\\$root->children('action')) {
+  if(\\$action->att('id') eq 'org.libvirt.unix.manage') {
+    foreach my \\$defaults (\\$action->children('defaults')) {
+      foreach my \\$allow_any (\\$defaults->children('allow_any')) {
+        \\$allow_any->set_text('auth_admin');
+      }
+      foreach my \\$allow_inactive (\\$defaults->children('allow_inactive')) {
+        \\$allow_inactive->set_text('auth_admin');
+      }
+      foreach my \\$allow_active (\\$defaults->children('allow_active')) {
+        \\$allow_active->set_text('auth_admin_keep');
+      }
+    }
+  }
+}
+\\$twig->print();
+EOF
+
+# Virsh commands won't work unless libvirtd is running
+service libvirtd start
+# The default net doesn't work for our purposes; get rid of it
+virsh net-destroy default
+virsh net-undefine default
+# Define the default storage pool
+virsh pool-define-as --name default --type fs --source-dev=/dev/vg0/vm --target=/var/lib/libvirt
+virsh pool-build default
+virsh pool-autostart default
+service libvirtd stop
+umount /var/lib/libvirt
+sed -i.bak -re '\%/var/lib/libvirt%d' /etc/fstab
+service libvirtd start
+# Tell vmtool where the disk images are
+sed -i -re 's/^[[:space:]]*VM_DIR=.*$/VM_DIR=\/var\/lib\/libvirt\/images/' /opt/etc/vmtool.conf
+# Convenience link to VM disk images
+ln -s var/lib/libvirt/images /vm
+
+# This helps virt-manager and virt-viewer work better
+install -m0644 -o root -g root /root/stemcellize/virsh.sh /etc/profile.d/
