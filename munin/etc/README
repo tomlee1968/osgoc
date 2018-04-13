@@ -1,0 +1,308 @@
+OSG Operations Munin README
+===========================
+
+Munin node configuration is governed by
+/usr/local/munin/conf.yaml. Change that file and then run
+/usr/local/munin/bin/build_munin_conf.rb. This is because Munin does
+not allow global module configuration by itself, and because as of a
+January 2017 update, each node's "address" field must contain an IP
+address; Munin is no longer looking up hostnames. The script does the
+IP lookups and implements a form of global module configuration.
+
+I chose YAML for the format because YAML is a human- and
+machine-readable data format with support in a variety of scripting
+languages including Perl, Python, and Ruby. There is a script,
+/usr/local/munin/bin/goc_host_check.rb, that checks DNS and LDAP for
+network information and automatically adds Munin configuration for new
+nodes that appear, also disabling Munin monitoring for nodes that
+aren't responding and removing nodes that have vanished from DNS,
+changing /usr/local/munin/etc/conf.yaml.
+
+YAML Primer
+-----------
+
+As with all YAML files, the conf.yaml file begins with a "---" line
+and proceeds to define mappings (hashes/dictionaries) and sequences
+(arrays/lists). A mapping's values are key-value pairs that look like
+
+key: value
+otherkey: othervalue
+
+while a sequence's entries are just like that, only with the key
+replaced by a hyphen, for example,
+
+- value
+- othervalue
+
+You can have mappings and sequences whose values are other mappings or
+sequences by leaving the value blank and starting the nested mapping
+or sequence on the next line, indented (usually by two spaces)
+relative to the previous line. YAML is indentation-sensitive.
+
+key:
+  nestedkey: nestedvalue
+
+-
+  nestedkey: nestedvalue
+
+key:
+  - nestedvalue
+
+-
+  - nestedvalue
+
+(Sometimes you will see an unindented nested sequence as a mapping
+value. This is OK in YAML because it's unambiguous to machines, but
+it's more human-readable to indent them too.)
+
+Now on to conf.yaml specifically.
+
+Global Configuration
+--------------------
+
+There is a top-level mapping named
+'global' that contains any Munin settings you want to affect all
+nodes. For example,
+
+global:
+  swap:
+    swap_out:
+      warning: 20
+
+This would be equivalent to putting
+
+  swap.swap_out.warning 20
+
+into every node's configuration. Note here that the Munin settings are
+broken up into mappings. This is so that, instead of writing
+
+  processes.processes.warning 180
+  processes.processes.critical 200
+
+you can instead write
+
+  processes:
+    processes:
+      warning: 180
+      critical: 200
+
+That's two "processes" fewer, at the cost of some more whitespace.
+
+Flags
+-----
+
+You probably won't need to change the global "flags" section. This
+script implements a system of "flags," a way to quickly tell Munin via
+the rebuild script whether a machine is physical or virtual, or
+whether it's production or ITB, without making a whole lot of
+changes. See "Nodes" for more. But the global "flags" section defines
+the allowed flags.
+
+Within the "flags" section is a mapping whose keys are the flags, and
+within each of those is a nested mapping containing these keys:
+
+label: The flag's full name. This is used to create the Munin node
+group into which the node falls. The "value" key (see below) is
+consulted to determine the order in which the labels appear in the
+group name.
+
+category: The name of the category in which that flag falls. A node
+can have at most one flag from each category. Right now there are ony
+two category name: "Virtuality", which describes whether a node is
+physical or virtual, and "Criticality", which describes whether it's
+production, ITB, development, internal, or staff.
+
+value: The numeric value assigned to this flag. A node's flag's
+numeric values are added to create the number at the beginning of the
+configuration filename for each node. That number really only
+determines the order in which Munin processes the nodes --
+theoretically anyway, it would be best to put the highest-priority
+nodes first in case there's some sort of problem and Munin dies while
+in the process of updating, so at least the high-priority ones get
+done before it happens. I suggest making categories' values orthogonal
+-- right now, the "Criticality" category's values are all single-digit
+multiples of 10, so they don't interfere with the "Virtuality" values,
+which are either 0 or 5. Also, the 00 through 09 file numbers are
+reserved for base configuration files, so don't use any combinations
+that will result in a sum less than 10.
+
+Flag-Based Configuration
+------------------------
+
+There is also a global "flag" section that defines Munin configuration
+settings for each flag. A node with that flag will be given whatever
+Munin configuration settings are defined here. It would look like this:
+
+flag:
+  phys:
+    plugin:
+      setting: 20
+
+This would result in this line being added to the configuration of any
+node that used the "phys" flag:
+
+plugin.setting 20
+
+Node-Based Configuration
+------------------------
+
+This is probably where most of the work will be done. Under the global
+"nodes" key, each node's short hostname (the first component of the
+hostname, before any '.') is used as the key to a nested mapping
+containing that node's Munin settings. There will also be a "flags"
+key containing a nested sequence of the flags used for that node.
+
+A node that just uses the global settings would only have flags. For
+example, an ITB virtual machine that just used the global settings
+would look like this:
+
+nodes:
+  #(... other nodes ...)
+  meshconfig-itb:
+    flags:
+      - vm
+      - itb
+  #(... probably still other nodes ...)
+
+If there were additional settings, they would just be other keys in
+the mapping:
+
+  siab:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+      - phys
+      - prod
+    load:
+      load:
+        warning: 30
+
+A special key called "disable", if present with a true value, results
+in that node's configuration file being suppressed without having to
+delete its configuration data from conf.yaml; this is useful if there
+is something wrong with the host that is expected to be remedied, for
+example if it's offline for maintenance.
+
+And remember, you only need to put things here if you want to override
+the global or flag-based configuration settings (or if your settings
+don't appear in those at all). If the global setting's OK, save
+yourself trouble and don't bother to put it in the node too.
+
+Order of Precedence
+-------------------
+
+Settings are applied in this order, meaning that the ones lower in the
+list override earlier ones:
+
+- /etc/munin/munin.conf
+- /usr/local/munin/conf.d/01-alert-formats
+- /usr/local/munin/conf.d/02-group-definitions
+- Global settings from conf.yaml
+- Flag-based settings from conf.yaml
+- Node-based settings from conf.yaml
+
+Also, all of the conf.yaml settings will be placed in the
+node-specific configuration files, meaning that they will affect only
+the nodes for which they are intended, even if they override a setting
+from one of the earlier files.
+
+Setting Really Effective Alert Thresholds
+-----------------------------------------
+
+False alarms are BAD -- possibly even worse than true alarms, because
+they mean the alarm system itself is unreliable. What we want to be
+constantly striving toward is an alerting system that only alerts us
+when we need to do something. Critical alerts that aren't really
+critical need to be treated like someone who pulls a fire alarm as a
+prank; they need to be arrested and brought in for questioning.
+
+Munin has two thresholds for alerting, "warning" and "critical." The
+Munin developers leave it up to the local site what to use these for
+and what thresholds to set for which monitored quantities, though many
+plugins have defaults.
+
+Although I'm not sure warnings are necessary, or at least always
+necessary, we're striving for a situation where we use Munin warnings
+to mean that there is a condition that is significantly abnormal, but
+not warranting any emergency action at this time. Warnings can be
+early signs that a critical may be coming, and if they come during the
+regular business day we may be able to prevent a critical from
+happening by checking out the warning -- but only if the warning is a
+real warning and not a false alarm.
+
+Ideally we should be using Munin criticals to mean that something must
+be done, now, no matter what time of day or night it is (depending on
+the criticality of the machine, anyway). A critical alert means that
+some top-priority production service is in danger of going down -- or
+is already down. This is the core of our alerting system, and we
+shouldn't dilute it, or we might as well throw the whole thing away,
+because it's a waste of time and effort to send out alerts that mean
+nothing. And that's what a supposed "critical alert" means, when
+there's no way to tell whether it's really critical or not -- nothing.
+
+Central to the problem is the concept of Conceivable Range of Values
+for Normal Operation (I suppose this spells out "CROVNO" ... I'm not
+sure I like it as an acronym, though) -- the range of values that is
+expected if the service is behaving normally. It will differ from one
+service to another and probably cannot be predicted a priori; it will
+likely require observation for a period of time before a reasonable
+range can be established. Once it is established, though, setting
+thresholds becomes possible.
+
+When a service is administered by someone outside the core GOC group,
+and if they are blase about warnings or criticals that their service
+constantly generates, we need to press them about raising the
+thresholds, and ultimately if they refuse to give a clear answer, we
+need to raise the thresholds ourselves. The criteria should be the
+same: if there's a warning, and the service administrator considers
+the situation normal, we should raise the threshold. If there's a
+critical, and the service administrator considers it abnormal but not
+cause for any drastic action, we should raise the threshold. In the
+end, the thresholds are for our use.
+
+This is the current policy for the GOC:
+
+* "Warning" means the monitored variable is unusually high and not a
+value to be expected under normal circumstances, but is still not high
+enough that something is considered to be seriously wrong -- perhaps
+worth looking into, but not warranting a check at 2 a.m..  If the
+machine is reporting a "warning" alert but is considered to be working
+normally, the warning threshold should be raised. More difficult to
+catch is the situation when the warning threshold is too high; it
+should be lowered if it is far above the CROVNO, but this situation is
+more difficult to detect.
+
+  -- Too low: Alerts all the time or every day.
+  -- Probably too low: Alerts in some situations that would still be
+considered normal operation.
+  -- Probably too high: Is far above the conceivable normal range.
+  -- Too high: Alerts only in situations that should be critical.
+
+Rule of thumb: If you get a warning, look at it, and see that things
+are normal and you don't need to do anything, the threshold is too
+low.
+
+* "Critical" means the monitored variable is so high that it indicates
+imminent or present service failure. Setting the critical threshold
+too high, however, can result in no alerts ever being sent out -- for
+example, the system may become unresponsive and unable to send alerts
+before reaching the threshold. In any case, the critical threshold
+should be set well above the CROVNO, something that represents a truly
+critical situation that requires immediate attention.
+
+  -- Too low: Alerts only slightly less frequently than the warning
+alerts.
+  -- Probably too low: Alerts in situations that don't require
+immediate attention.
+  -- Probably too high: Difficult to conceive a situation in which an
+alert would occur.
+  -- Too high: Service goes down before critical alerts go out.
+
+Rule of thumb: If you get a critical, and you look and see that the
+situation is *anything* that wouldn't require you to get out of bed if
+it happened at 2 a.m. if it occurred on a high-priority production
+service, raise the critical threshold.
+
+Make sure that when it's a critical, it's something serious.

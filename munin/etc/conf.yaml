@@ -1,0 +1,1514 @@
+---
+global:
+  processes:
+    processes:
+      warning: 180
+      critical: 200
+  load:
+    load:
+      warning: 15
+      critical: 120
+  use_node_name: true
+  cpu:
+    contacts: none
+  swap:
+    swap_out:
+      warning: 20
+flag:
+  phys:
+  vm:
+  prod:
+  itb:
+  int:
+  dev:
+  staff:
+flags:
+  phys:
+    value: 0
+    label: Physical
+    category: Virtuality
+  vm:
+    value: 5
+    label: Virtual
+    category: Virtuality
+  prod:
+    value: 10
+    label: Production
+    category: Criticality
+  itb:
+    value: 20
+    label: ITB
+    category: Criticality
+  int:
+    value: 30
+    label: Internal
+    category: Criticality
+  dev:
+    value: 40
+    label: Development
+    category: Criticality
+  staff:
+    value: 50
+    label: Staff
+    category: Criticality
+nodes:
+  wn2:
+    processes:
+      processes:
+        warning: 250
+        critical: 300
+    flags:
+    - vm
+    - dev
+  cassandra-itb1:
+    processes:
+      processes:
+        warning: 500
+        critical: 700
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 30
+  ds-bl-01:
+    flags:
+    - phys
+    - prod
+    df:
+      _dev_mapper_vg0_tmp:
+        warning: 98
+        critical: 99
+  sib:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  vc:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  yum-internal-6:
+    flags:
+    - vm
+    - prod
+  vm09:
+    processes:
+      processes:
+        warning: 900
+        critical: 1000
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  rquick:
+    flags:
+    - vm
+    - staff
+  redirector2:
+    flags:
+    - vm
+    - prod
+  repo2:
+    processes:
+      processes:
+        warning: 300
+        critical: 600
+    flags:
+    - vm
+    - prod
+  vm06:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  psds-itb1:
+    df:
+      _dev_mapper_vg0-var:
+        warning: 77
+        critical: 90
+    processes:
+      processes:
+        warning: 2000
+        critical: 10000
+    swap:
+      swap_in:
+        warning: 2000
+        critical: 3000
+      swap_out:
+        warning: 2000
+        critical: 3000
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 50
+        critical: 100
+  cobbler:
+    flags:
+    - vm
+    - prod
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  rsvprocess2:
+    flags:
+    - vm
+    - prod
+  dubois:
+    processes:
+      processes:
+        warning: 425
+        critical: 600
+    flags:
+    - phys
+    - prod
+  osg-flock:
+    processes:
+      processes:
+        warning: 20000
+        critical: 30000
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 150
+        critical: 200
+    df:
+      _dev_mapper_vg1_arr2:
+        warning: 95
+        critical: 98
+      _dev_mapper_vg0_var:
+        warning: 95
+        critical: 98
+    contacts: monitor rynge
+  oim:
+    flags:
+    - vm
+    - prod
+    quota:
+      global_hostcert_year_count:
+        warning: 8000
+        critical: 9000
+  vm03:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - phys
+    - prod
+  tx2:
+    flags:
+    - vm
+    - prod
+    cpu:
+      user:
+        warning: 200
+        critical: 400
+  oasis-replica-itb:
+    processes:
+      processes:
+        warning: 280
+        critical: 300
+    flags:
+    - vm
+    - itb
+  jira-itb:
+    flags:
+    - vm
+    - itb
+  idp-itb:
+    flags:
+    - vm
+    - itb
+  woodcrest:
+    processes:
+      processes:
+        warning: 400
+        critical: 450
+    flags:
+    - phys
+    - dev
+    load:
+      load:
+        warning: 30
+  backup:
+    processes:
+      processes:
+        warning: 200
+        critical: 250
+    flags:
+    - phys
+    - prod
+  myosg2:
+    processes:
+      processes:
+        warning: 200
+        critical: 250
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 10
+        critical: 15
+    memory:
+      commited:
+        warning: 1200000000
+        critical: 2000000000
+    df_inode:
+      _dev_hda12:
+        warning: 30
+        critical: 60
+      _dev_hda11:
+        warning: 30
+        critical: 60
+      _dev_hda10:
+        warning: 30
+        critical: 60
+      _dev_hda9:
+        warning: 30
+        critical: 60
+      _dev_hda1:
+        warning: 30
+        critical: 60
+      _dev_hda6:
+        warning: 30
+        critical: 60
+      _dev_hda7:
+        warning: 30
+        critical: 60
+      _dev_hda8:
+        warning: 30
+        critical: 60
+    cpu:
+      system:
+        warning: 70
+        critical: 80
+      user:
+        warning: 60
+        critical: 80
+  jump2:
+    flags:
+    - vm
+    - prod
+  internal:
+    processes:
+      processes:
+        warning: 425
+        critical: 600
+    flags:
+    - vm
+    - prod
+  blogs1:
+    flags:
+    - vm
+    - prod
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  event2:
+    flags:
+    - vm
+    - prod
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  steige:
+    flags:
+    - vm
+    - dev
+  confluence:
+    flags:
+    - vm
+    - prod
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  perfsonar-lt:
+    processes:
+      processes:
+        warning: 600
+        critical: 800
+    flags:
+    - vm
+    - prod
+  twiki-itb:
+    flags:
+    - vm
+    - itb
+    cpu:
+      user:
+        warning: 200
+        critical: 250
+  ticket-itb:
+    flags:
+    - vm
+    - itb
+  rsv-client-itb:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - vm
+    - itb
+  lvs-itb2:
+    flags:
+    - vm
+    - itb
+  display-itb:
+    flags:
+    - vm
+    - itb
+  cassandra3:
+    processes:
+      processes:
+        warning: 500
+        critical: 700
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+  ce:
+    flags:
+    - vm
+    - dev
+  ttrack-itb:
+    flags:
+    - vm
+    - itb
+  glidein-int:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - vm
+    - itb
+  csiu-itb:
+    flags:
+    - vm
+    - itb
+  collector-itb:
+    flags:
+    - vm
+    - itb
+  echism:
+    disable: true
+    flags:
+    - vm
+    - staff
+  rsv-itb:
+    processes:
+      processes:
+        warning: 230
+        critical: 250
+    flags:
+    - vm
+    - itb
+  psds0:
+    processes:
+      processes:
+        warning: 200000
+        critical: 1000000
+    swap:
+      swap_in:
+        warning: 150000
+        critical: 200000
+      swap_out:
+        warning: 150000
+        critical: 200000
+    df:
+      _dev_mapper_vg0_var:
+        warning: 910
+        critical: 950
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 5000
+        critical: 10000
+  ece2:
+    disable: true
+    flags:
+    - vm
+    - staff
+  icinga-dev:
+    flags:
+    - vm
+    - dev
+  data1:
+    flags:
+    - vm
+    - prod
+  devm06:
+    processes:
+      processes:
+        warning: 500
+        critical: 550
+    flags:
+    - phys
+    - dev
+  glidein:
+    processes:
+      processes:
+        warning: 1800
+        critical: 3600
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 700
+        critical: 1200
+    df:
+      _dev_mapper_vg0_usr_local:
+        warning: 90
+        critical: 95
+      _dev_mapper_vg0_var:
+        warning: 95
+        critical: 98
+    cpu:
+      system:
+        warning: 700
+        critical: 900
+    swap:
+      swap_in:
+        warning: 1200000
+        critical: 1400000
+      swap_out:
+        warning: 1200000
+        critical: 1400000
+  twiki:
+    disable: true
+    flags:
+    - vm
+    - prod
+    cpu:
+      user:
+        warning: 200
+        critical: 400
+  redirector-itb1:
+    flags:
+    - vm
+    - itb
+  display1:
+    flags:
+    - vm
+    - prod
+  ticket2:
+    processes:
+      processes:
+        warning: 275
+        critical: 325
+    flags:
+    - vm
+    - prod
+  puppet-test:
+    puppet:
+      since:
+        warning: "0:"
+        critical: "0:"
+    flags:
+    - vm
+    - dev
+  web1:
+    flags:
+    - vm
+    - prod
+  swamp2:
+    flags:
+    - vm
+    - prod
+  yum-internal-c6:
+    flags:
+    - vm
+    - prod
+  oasis2-test:
+    disable: true
+    flags:
+    - vm
+    - dev
+  oasis-login-itb:
+    flags:
+    - vm
+    - itb
+  cassandra-itb2:
+    processes:
+      processes:
+        warning: 500
+        critical: 700
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 30
+  ds-bl-02:
+    flags:
+    - vm
+    - prod
+  imap:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  tx-itb1:
+    flags:
+    - vm
+    - itb
+    cpu:
+      user:
+        warning: 200
+        critical: 250
+  vm07:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  collector1:
+    flags:
+    - vm
+    - prod
+  oasis-replica:
+    processes:
+      processes:
+        warning: 280
+        critical: 300
+    flags:
+    - vm
+    - prod
+  rsvprocess-itb:
+    flags:
+    - vm
+    - itb
+  psds-itb2:
+    processes:
+      processes:
+        warning: 2000
+        critical: 10000
+      swap:
+        swap_in:
+          warning: 600
+          critical: 1000
+        swap_out:
+          warning: 600
+          critical: 1000
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 50
+        critical: 100
+  vm04:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  vm10:
+    processes:
+      processes:
+        warning: 900
+        critical: 1000
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  psvm01:
+    processes:
+      processes:
+        warning: 1000
+        critical: 1500
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  crlsync:
+    flags:
+    - vm
+    - prod
+  csiu:
+    processes:
+      contacts: none
+    flags:
+    - phys
+    - prod
+  munin:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  collab:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  vm01:
+    processes:
+      processes:
+        warning: 225
+        critical: 2000
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  monitor:
+    processes:
+      processes:
+        warning: 380
+        critical: 400
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+    bdii_sites:
+      is4_wlcg:
+        warning: "55:"
+        critical: "50:"
+      is2_wlcg:
+        warning: "55:"
+        critical: "50:"
+      is2_osg:
+        warning: "70:"
+        critical: "60:"
+      is1_osg:
+        warning: "70:"
+        critical: "60:"
+      lcg:
+        warning: "370:"
+        critical: "340:"
+      is4_osg:
+        warning: "70:"
+        critical: "60:"
+      is1_wlcg:
+        warning: "55:"
+        critical: "50:"
+  glow-gfactory:
+    disable: true
+    processes:
+      processes:
+        warning: 1500
+        critical: 1700
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 70
+    df:
+      _dev_mapper_vg0_usr_local:
+        warning: 90
+        critical: 95
+      _dev_mapper_vg0_var:
+        warning: 95
+        critical: 98
+    cpu:
+      system:
+        warning: 700
+        critical: 900
+  repo-itb:
+    processes:
+      processes:
+        warning: 250
+        critical: 300
+    flags:
+    - vm
+    - itb
+  vpn:
+    flags:
+    - vm
+    - prod
+  lvs1:
+    flags:
+    - vm
+    - prod
+  rsv:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - phys
+    - prod
+  monitor-itb:
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 30
+    bdii_sites:
+      is4_wlcg:
+        warning: "55:"
+        critical: "50:"
+      is2_wlcg:
+        warning: "55:"
+        critical: "50:"
+      is2_osg:
+        warning: "70:"
+        critical: "60:"
+      is1_osg:
+        warning: "70:"
+        critical: "60:"
+      lcg:
+        warning: "370:"
+        critical: "340:"
+      is4_osg:
+        warning: "70:"
+        critical: "60:"
+      is1_wlcg:
+        warning: "55:"
+        critical: "50:"
+  external:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  cert:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  data-itb:
+    flags:
+    - vm
+    - itb
+  meshconfig:
+    processes:
+      processes:
+        warning: 400
+        critical: 500
+    flags:
+    - vm
+    - prod
+  cassandra1:
+    processes:
+      processes:
+        warning: 500
+        critical: 700
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+  swamp-ticket-dev:
+    flags:
+    - vm
+    - dev
+  psds1:
+    processes:
+      processes:
+        warning: 2000
+        critical: 10000
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 50
+        critical: 100
+    swap:
+      swap_out:
+        warning: 80
+  perfsonar-bw:
+    processes:
+      processes:
+        warning: 350
+        critical: 400
+    flags:
+    - vm
+    - prod
+  backup2:
+    processes:
+      processes:
+        warning: 200
+        critical: 250
+    flags:
+    - vm
+    - prod
+  ece3:
+    disable: true
+    flags:
+    - vm
+    - staff
+  perfsonar1:
+    disable: true
+    processes:
+      processes:
+        warning: 800
+        critical: 1000
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+  data2:
+    flags:
+    - vm
+    - prod
+  reports:
+    disable: true
+    flags:
+    - vm
+    - prod
+  swamp-ticket:
+    flags:
+    - vm
+    - prod
+  tx-dev:
+    disable: true
+    flags:
+    - vm
+    - itb
+  redirector-itb2:
+    flags:
+    - vm
+    - itb
+  devm04:
+    processes:
+      processes:
+        warning: 400
+        critical: 450
+    flags:
+    - phys
+    - dev
+  web-itb:
+    flags:
+    - vm
+    - itb
+    cpu:
+      user:
+        warning: 200
+        critical: 250
+  yum-internal-c7:
+    flags:
+    - vm
+    - prod
+  devm01:
+    processes:
+      processes:
+        warning: 400
+        critical: 2500
+    swap:
+      swap_in:
+        warning: 250
+        critical: 300
+      swap_out:
+        warning: 250
+        critical: 300
+    flags:
+    - phys
+    - dev
+  syslog:
+    flags:
+    - vm
+    - prod
+  web2:
+    flags:
+    - vm
+    - prod
+  kagross:
+    flags:
+    - vm
+    - staff
+  thomlee:
+    processes:
+      processes:
+        warning: 250
+        critical: 300
+    flags:
+    - vm
+    - dev
+    contacts: monitor
+  jump:
+    flags:
+    - vm
+    - prod
+  xd-login:
+    processes:
+      processes:
+        warning: 50000
+        critical: 60000
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 150
+        critical: 200
+    df:
+      _dev_sdc1:
+        warning: 95
+        critical: 98
+    contacts: monitor rynge
+    cpu:
+      system:
+        warning: 1400
+        critical: 2000
+      user:
+        warning: 1200
+        critical: 1500
+  schmiecs2:
+    disable: true
+    flags:
+    - vm
+    - staff
+  wn1:
+    processes:
+      processes:
+        warning: 250
+        critical: 300
+    flags:
+    - vm
+    - dev
+  voms-itb:
+    flags:
+    - vm
+    - itb
+    cpu:
+      user:
+        warning: 200
+        critical: 400
+  oasis-itb:
+    flags:
+    - vm
+    - itb
+  vm08:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+    swap:
+      swap_out:
+        warning: 500
+  collector2:
+    flags:
+    - vm
+    - prod
+  perfsonar-itb:
+    disable: true
+    processes:
+      processes:
+        warning: 1000
+        critical: 1200
+    swap:
+      swap_in:
+        warning: 200
+        critical: 300
+      swap_out:
+        warning: 200
+        critical: 300
+    flags:
+    - vm
+    - itb
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  redirector1:
+    flags:
+    - vm
+    - prod
+  repo1:
+    processes:
+      processes:
+        warning: 300
+        critical: 600
+    flags:
+    - vm
+    - prod
+  vm05:
+    processes:
+      processes:
+        warning: 450
+        critical: 500
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  ticket-dev:
+    flags:
+    - vm
+    - itb
+  vm02:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  tx1:
+    flags:
+    - vm
+    - prod
+    cpu:
+      user:
+        warning: 200
+        critical: 400
+  rsvprocess1:
+    flags:
+    - vm
+    - prod
+  myosg-itb:
+    processes:
+      processes:
+        warning: 200
+        critical: 250
+    flags:
+    - vm
+    - itb
+    load:
+      load:
+        warning: 5
+        critical: 10
+    memory:
+      commited:
+        warning: 900000000
+        critical: 1000000000
+    df_inode:
+      _dev_hdb1:
+        warning: 30
+        critical: 60
+      _dev_hda11:
+        warning: 30
+        critical: 60
+      _dev_hda10:
+        warning: 30
+        critical: 60
+      _dev_hda9:
+        warning: 30
+        critical: 60
+      _dev_hda1:
+        warning: 30
+        critical: 60
+      _dev_hda6:
+        warning: 30
+        critical: 60
+      _dev_hda7:
+        warning: 30
+        critical: 60
+      _dev_hda8:
+        warning: 30
+        critical: 60
+    cpu:
+      system:
+        warning: 70
+        critical: 80
+      user:
+        warning: 60
+        critical: 80
+  freeman:
+    disable: true
+    processes:
+      processes:
+        warning: 350
+        critical: 500
+    flags:
+    - phys
+    - dev
+    load:
+      load:
+        warning: 30
+  myosg1:
+    processes:
+      processes:
+        warning: 200
+        critical: 250
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 10
+        critical: 15
+    memory:
+      commited:
+        warning: 1200000000
+        critical: 2000000000
+    df_inode:
+      _dev_hda12:
+        warning: 30
+        critical: 60
+      _dev_hda11:
+        warning: 30
+        critical: 60
+      _dev_hda10:
+        warning: 30
+        critical: 60
+      _dev_hda9:
+        warning: 30
+        critical: 60
+      _dev_hda1:
+        warning: 30
+        critical: 60
+      _dev_hda6:
+        warning: 30
+        critical: 60
+      _dev_hda7:
+        warning: 30
+        critical: 60
+      _dev_hda8:
+        warning: 30
+        critical: 60
+    cpu:
+      system:
+        warning: 70
+        critical: 80
+      user:
+        warning: 60
+        critical: 80
+  event1:
+    flags:
+    - vm
+    - prod
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  lvs2:
+    flags:
+    - vm
+    - prod
+  oim-itb:
+    flags:
+    - vm
+    - itb
+  lvs-itb1:
+    flags:
+    - vm
+    - itb
+  cassandra2:
+    processes:
+      processes:
+        warning: 500
+        critical: 700
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+  huey:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - phys
+    - prod
+    load:
+      load:
+        warning: 30
+  puppet:
+    processes:
+      processes:
+        warning: 200
+        critical: 220
+    flags:
+    - vm
+    - prod
+  meshconfig-itb:
+    flags:
+    - vm
+    - itb
+  im-itb:
+    flags:
+    - vm
+    - itb
+  psds2:
+    processes:
+      processes:
+        warning: 2000
+        critical: 10000
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 50
+        critical: 100
+    swap:
+      swap_out:
+        warning: 50
+  perfsonar2:
+    processes:
+      processes:
+        warning: 800
+        critical: 1000
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 30
+    swap:
+      swap_out:
+        warning: 35
+  blogs-itb:
+    flags:
+    - vm
+    - itb
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  oasis:
+    processes:
+      processes:
+        warning: 200
+        critical: 400
+    flags:
+    - vm
+    - prod
+    load:
+      load:
+        warning: 120
+        critical: 300
+  voms:
+    flags:
+    - vm
+    - prod
+    cpu:
+      user:
+        warning: 200
+        critical: 400
+  fw:
+    flags:
+    - vm
+    - prod
+  devm05:
+    processes:
+      processes:
+        warning: 500
+        critical: 550
+    swap:
+      swap_in:
+        warning: 60
+        critical: 100
+      swap_out:
+        warning: 60
+        critical: 100
+    flags:
+    - phys
+    - dev
+  event-itb:
+    flags:
+    - vm
+    - itb
+    cpu:
+      system:
+        warning: 90
+        critical: 95
+  ticket1:
+    processes:
+      processes:
+        warning: 275
+        critical: 325
+    flags:
+    - vm
+    - prod
+  devm02:
+    processes:
+      processes:
+        warning: 400
+        critical: 700
+    flags:
+    - phys
+    - dev
+    df:
+      _dev_mapper_vg0_is__itb1_4:
+        warning: 80
+        critical: 90
+  glidein-itb:
+    processes:
+      processes:
+        warning: 1200
+        critical: 1400
+    swap:
+      swap_in:
+        warning: 2000
+        critical: 3000
+      swap_out:
+        warning: 2000
+        critical: 3000
+    flags:
+    - phys
+    - dev
+    load:
+      load:
+        warning: 70
+  rsv1:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - vm
+    - prod
+    df:
+      _dev_vdb1:
+        warning: 90
+        critical: 95
+  rsv2-client:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - vm
+    - prod
+  mvkrenz:
+    flags:
+    - vm
+    - staff
+  oasis-login:
+    flags:
+    - vm
+    - prod
+  swamp1:
+    flags:
+    - vm
+    - prod
+  jira:
+    flags:
+    - vm
+    - prod
+  sib-itb:
+    processes:
+      processes:
+        warning: 225
+        critical: 275
+    flags:
+    - phys
+    - itb
+  db2:
+    flags:
+    - vm
+    - int
+  display2:
+    flags:
+    - vm
+    - prod
+  event-dev:
+    flags:
+    - vm
+    - dev
+  grafana:
+    flags:
+    - vm
+    - int
+  handle-itb:
+    flags:
+    - vm
+    - itb
+  jira-dev1:
+    flags:
+    - vm
+    - dev
+  jira-dev2:
+    flags:
+    - vm
+    - dev
+  myosg-dev:
+    flags:
+    - vm
+    - dev
+  oim-dev1:
+    flags:
+    - vm
+    - dev
+  psetf:
+    processes:
+      processes:
+        warning: 600
+        critical: 700
+    flags:
+    - vm
+    - itb
+  sib-itb:
+    flags:
+    - vm
+    - itb
+  sso:
+    flags:
+    - vm
+    - prod

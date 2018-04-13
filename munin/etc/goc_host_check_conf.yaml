@@ -1,0 +1,100 @@
+---
+# These are hosts to ignore completely. These are things like gateways
+# or reserved hostnames -- either they're not under our control, or
+# they're not really machines at all.
+ignore:
+  # If the FQDN matches any of these regexes, ignore the host.
+  fqdn:
+    - "^is\.grid\.iu\.edu$"
+    - "\.net\.uits\.iu\.edu$"
+    - "\.reserved\.iu\.edu$"
+  # If short hostname matches any of these regexes, ignore the host.
+  short:
+    - "^colorform$"
+    - "^ece\d$"
+    - "^echism$"
+    - "^etchasketch$"
+    - "^freeman$"
+    - "^radioflyer$"
+    - "^rquick$"
+    - "^schmiecs\d*$"
+    - "^thomlee\d+$"
+    - "^tricycle$"
+    - "^ttrack$"
+    - "^wn3$"
+    - "^vip-"
+#    - "^adeximo$"
+    - "^bundy$"
+#    - "^cpipes$"
+    - "^is-itb\d+$"
+    - "^software-itb$"
+    - "^software\d+$"
+    - "^soichi\d*$"
+#    - "^vjneal$"
+    - "^yum\d+$"
+#    - "^yum-internal-5.*$"
+    - "^yum-itb$"
+
+# Normally a host that appears in global DNS but not local would be an
+# error, but this list specifies hosts for which this is normal. There
+# are devices that have only one network interface, attached to the
+# public network. There are also VIP addresses for LVS -- typically
+# these exist only in public DNS because there's no point in LVS on
+# the private network. Also, when hostnames are moving from one IP to
+# another, the IU DNS admins usually use "old-" and "new-" prefixes in
+# public DNS, because they do not like hostnames with IP addresses
+# that nothing is listening on, or IP addresses without hostnames that
+# something is listening on. Also sometimes we make an alias in public
+# DNS but not in private, as with yum1/2.
+public_only_ok:
+  fqdn:
+  short:
+    - "^caesar$"
+    - "^dtr-dev$"
+    - "^gpetto$"
+    - "^stemcell$"
+    - "^vip-"
+
+# Normally a host that appears in local DNS but not global would be an
+# error, but this list specifies hosts for which this is normal. This
+# is usually for machines that only have a presence on the private
+# network. Also, lvs-itb has VIP hosts that listen on the private
+# network for testing purposes.
+private_only_ok:
+  fqdn:
+  short:
+    - "^vip-"
+
+# These are hosts that shouldn't be pinged to see if they're up. This
+# is mostly for machines that are only intermittently online, or
+# hostnames that are aliases to other hosts (why ping them twice?).
+noping:
+  fqdn:
+  short:
+    - "^dtr-dev$"
+    - "^interjection$"
+    - "^jazmine$"
+    - "^new-"
+    - "^old-"
+    - "^stemcell$"
+    - "^thomlee\d*$"
+    - "^vip-"
+
+# "nomunin" is for hosts that Munin should never attempt to scan,
+# because they're either only intermittently online or they're not
+# compatible with Munin. There's also yum1/2/-itb; they're aliases to
+# other hosts, and there's no point to monitoring them twice.
+nomunin:
+  fqdn:
+  short:
+    - "^caesar$"
+    - "^dtr-dev$"
+    - "^flonominal$"
+    - "^gpetto$"
+    - "^handle-dev$"
+    - "^interjection$"
+    - "^jazmine$"
+    - "^nui$"
+    - "^stemcell$"
+    - "^thomlee\d*$"
+    - "^vip-"
