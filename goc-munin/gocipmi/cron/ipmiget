@@ -1,0 +1,5 @@
+# run hardware monitoring tool every minute
+# This is so munin-node can report hardware status
+# Put here by TJL
+* * * * * root /opt/share/munin/plugins/ipmiget
+

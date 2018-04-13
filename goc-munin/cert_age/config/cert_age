@@ -1,0 +1,3 @@
+[cert_age]
+user root
+env.certs /etc/grid-security/host/cert.pem,/etc/grid-security/http/cert.pem

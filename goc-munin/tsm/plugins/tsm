@@ -1,0 +1,76 @@
+#!/usr/bin/perl -w
+#
+# Plugin to monitor the last time TSM backed up the system
+# Tom Lee <thomlee@indiana.edu>
+#
+# Parameters understood:
+#
+# 	config   (required)
+# 	autoconf (optional - used by munin-node-configure)
+#       suggest  (optional - used by munin-node-configure)
+#
+# Magic markers - optional - used by installation scripts and
+# munin-node-configure:
+#
+
+use strict;
+use Date::Parse;
+
+# All Munin modules should understand the 'autoconf' parameter, which
+# just prints 'yes' or 'no (with possible explanation)' depending on
+# whether there is a problem running it, returning 0 if yes and 1 if
+# no
+
+if ($ARGV[0] and $ARGV[0] eq "autoconf") {
+  unless(-e '/opt/adsm/dsmsched.log') {
+    print("no (/opt/adsm/dsmsched.log does not exist)\n");
+    exit(1);
+  }
+  unless((system("/bin/grep -qi 'successful .*backup of' /opt/adsm/dsmsched.log") >> 8) == 0) {
+    print("no (no successful backups logged)\n");
+    exit(1);
+  }
+  print("yes\n");
+  exit(0);
+}
+
+# The 'suggest' parameter I'm not totally clear on -- perhaps it
+# suggests some sort of configuration value
+
+if ($ARGV[0] and $ARGV[0] eq "suggest") {
+  exit 0;
+}
+
+# The 'config' parameter just tells the module to list out some
+# metadata about the return values
+
+if ($ARGV[0] and $ARGV[0] eq "config") {
+  print(<<"EOF");
+graph_title Days since last TSM backup
+graph_vlabel days
+graph_args --base 1000 --lower-limit 0
+graph_category backup
+graph_info Indicates how long it has been since TSM backed up the system.
+days.label Days since last backup
+days.draw LINE2
+days.info The number of days (fractional) since the last backup.
+days.warning 4
+days.critical 7
+EOF
+  ;
+  exit 0;
+}
+
+# Lacking a parameter, print the data
+
+unless((system("/bin/grep -qi 'successful .*backup of' /opt/adsm/dsmsched.log") >> 8) == 0) {
+  printf("days.value nan\n");
+  exit(0);
+}
+my($line) = `/bin/grep -i 'successful .*backup of' /opt/adsm/dsmsched.log | /usr/bin/tail -n 1`;
+my($timestr) = substr($line, 0, 19);
+my($time) = str2time($timestr);
+printf("days.value %02g\n", (time() - $time)/86400.0);
+exit(0);
+
+# vim:syntax=perl

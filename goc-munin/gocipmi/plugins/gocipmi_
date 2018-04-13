@@ -1,0 +1,129 @@
+#!/usr/bin/perl -w
+
+# gocipmi -- Munin plugin to monitor IPMI hardware stats
+
+# Thomas Lee <thomlee@iu.edu>
+
+# Customized for the Dell PowerEdge hardware we use here
+
+# Link as gocipmi_<machine>_<sensors>
+# where <machine> is one of:
+# dell -- works for Dells and that is usually fine
+# and <sensors> is one of:
+# fan -- monitor fan speed
+# temp -- monitor temperatures
+# volt -- monitor voltages
+
+# Example: ln -s /opt/share/munin/plugins/gocipmi /etc/munin/plugins/gocipmi_dell_temp
+
+# This is part of an RPM, munin_gocipmi.  To check out the source,
+#
+# svn co https://osg-svn.rtinfo.indiana.edu/goc-internal/goc-munin/gocipmi
+#
+# To rebuild the RPM, enter the gocipmi directory and "make rpm" (make sure you
+# have the rpmbuild package installed).  The RPM should be in
+# ~/rpmbuild/RPMS/noarch.
+
+use strict;
+use File::Basename;
+use IO::File;
+
+my(undef, $machine, $sensors) = split(/_/, basename($0));
+my $ipmioutput = '/tmp/ipmi-sensors';
+my @ipmioutput = ();
+my %data = ();
+my %graph_info =
+  (
+   'fan' => 'Fan speed data reported by ipmitool.',
+   'temp' => 'CPU, backplane, riser, etc. temperature data reported by ipmitool.  If you see negative temperature values, note that some generations of Intel CPUs report temperature relative to critical level.  If you see vague labels such as "Temp" or "Temp 2", unfortunately that is all the data ipmitool gives.',
+   'volt' => 'Voltage data reported by ipmitool.',
+  );
+my %graph_title =
+  (
+   'fan' => 'Fan speed',
+   'temp' => 'Temperature',
+   'volt' => 'Voltage',
+  );
+my %graph_vlabel =
+  (
+   'fan' => 'RPM',
+   'temp' => 'Degrees C',
+   'volt' => 'Volts',
+  );
+
+sub read_output() {
+  return if(@ipmioutput);
+
+  my $fh = IO::File->new();
+  $fh->open("<$ipmioutput") || die("Could not open $ipmioutput for reading: $!\n");
+  my %labelseen = ();
+  my $line;
+  while(defined($line = <$fh>)) {
+    chomp($line);
+    push(@ipmioutput, $line);
+    my($name, $value, $ok) = split(/\|/, $line, 4);
+    $name = &strip_spaces($name);
+    $name =~ s/\s+rpm$//i;
+    $name =~ s/\s+temp$//i;
+    $value = &strip_spaces($value);
+    my $label = lc($name);
+    $label =~ s/\s+//g;
+    my $sensors;
+    if(($name =~ /temp/i) || ($value =~ /degrees/i)) {
+      $sensors = 'temp';
+    } elsif(($name =~ /rpm/i) || ($value =~ /rpm/i)) {
+      $sensors = 'fan';
+    } elsif($value =~ /volts/i) {
+      $sensors = 'volt';
+    } else {
+      next;
+    }
+    $value =~ s/\s+\D+//;
+    # Deal with duplicate names/labels
+    if($labelseen{$label}++) {
+      my $n = $labelseen{$label};
+      $label = sprintf('%s_%d', $label, $n);
+      $name .= sprintf(' %d', $n);
+    }
+    # Store in %data
+    push(@{$data{$sensors}}, { name => $name, label => $label, value => $value });
+  }
+  $fh->close();
+}
+
+sub strip_spaces($) {
+  my($str) = @_;
+  $str =~ s/^\s+//;
+  $str =~ s/\s+$//;
+  return($str);
+}
+
+# config print
+
+if($ARGV[0] && ($ARGV[0] eq 'autoconf')) {
+  print("yes\n");
+  exit 0;
+}
+
+if($ARGV[0] && ($ARGV[0] eq 'config')) {
+  &read_output();
+  print("graph_category sensors\n");
+  printf("graph_info %s\n", $graph_info{$sensors});
+  printf("graph_title %s\n", $graph_title{$sensors});
+  printf("graph_vlabel %s\n", $graph_vlabel{$sensors});
+  if($machine eq 'dell') {
+    foreach my $href (@{$data{$sensors}}) {
+      printf("%s.label %s\n", $href->{label}, $href->{name});
+    }
+  }
+  exit 0;
+}
+
+# printing values
+
+&read_output();
+if($machine eq 'dell') {
+  foreach my $href (@{$data{$sensors}}) {
+    printf("%s.value %s\n", $href->{label}, $href->{value});
+  }
+}

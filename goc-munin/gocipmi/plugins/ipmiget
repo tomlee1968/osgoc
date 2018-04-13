@@ -1,0 +1,3 @@
+#! /bin/sh
+/usr/bin/ipmitool  -I open sdr list full > /tmp/ipmi-sensors.tmp
+mv /tmp/ipmi-sensors.tmp /tmp/ipmi-sensors

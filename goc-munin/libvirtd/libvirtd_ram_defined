@@ -1,0 +1,219 @@
+#!/usr/bin/perl
+
+# Munin plugin to monitor the defined virtual RAM on a libvirt host
+# by Tom Lee <thomlee@iu.edu
+# Begun 2015-03-12
+# Last modified 2015-03-23
+
+#%# family: auto
+#%# capabilities: autoconf
+
+use strict;
+use warnings;
+use DataAmount;
+use IO::File;
+use Sys::Virt;
+
+$ENV{PATH} =
+  join ':',
+  qw(
+      /sbin
+      /bin
+      /usr/sbin
+      /usr/bin
+      /usr/local/sbin
+      /usr/local/bin
+      /opt/sbin
+      /opt/bin
+   );
+
+my %HANDLER =
+  (
+   autoconf => \&handle_autoconf,
+   suggest => \&handle_suggest,
+   snmpconf => \&handle_snmpconf,
+   config => \&handle_config,
+  );
+
+##############################################################################
+# Subroutines
+##############################################################################
+
+sub sys_virt_obj() {
+  # Returns a Sys::Virt object.
+  return Sys::Virt->new
+    (
+     uri => 'qemu:///system',
+     readonly => 1,
+    );
+}
+
+sub system_ram() {
+  # Returns a DataAmount object representing the total amount of installed
+  # system RAM.
+
+  my @dmilines = `/usr/sbin/dmidecode --type memory | /bin/grep -E "^[[:space:]]*Size:.*\$"`;
+  chomp @dmilines;
+  my $total = DataAmount->new("0B");
+  foreach my $line (@dmilines) {
+    $line =~ s/^\s+//;
+    $line =~ s/([a-zA-Z])B/$1iB/;
+    my(undef, $n, $u) = split(/\s+/, $line);
+    next unless $n and $n =~ /^\d/;
+    my $amt = DataAmount->new("$n$u");
+    $total += $amt;
+  }
+  return $total;
+}
+
+sub handle_autoconf() {
+  # See if this is a libvirt host.  Simplest method: See if there's a 'libvirt'
+  # RPM installed.
+
+  if(((system 'rpm -q --qf "" libvirt') >> 8) == 0) {
+    print "yes\n";
+    return 0;
+  } else {
+    print "no (libvirt not installed)\n";
+    return 1;
+  }
+}
+
+sub handle_suggest() {
+  # If this is a wildcard plugin, its name should end in '_' and it should have
+  # magic marker '#%# capabilities=suggest'.  This routine should print a list
+  # of the possible suffixes to appear after that underscore in the symlinks.
+
+  return 1;
+}
+
+sub handle_snmpconf() {
+  # Print require, index and number lines in the case that this plugin is an
+  # SNMP plugin.
+
+  return 1;
+}
+
+sub vm_sorter($$) {
+  # Sort two domains by name -- by GOC convention a VM's name matches regex
+  # '^[a-z0-9-]+.[0-9]+$', or more specifically
+  # '^[a-z-]+(-[a-z]+)?[0-9]*\.[0-9]+$'.  Put another way it is
+  # <service>[-<variant>][<instance number>].<version>, where
+  #
+  # <service> = name of service, e.g. 'is', 'myosg', 'oasis-replica', 'oim',
+  # 'repo', 'twiki'
+  # <variant> = variant instance, e.g. 'dev', 'itb', 'test'
+  # <instance number> = digits, such as '1', '2', '3', etc.
+  # <version> = version of VM, e.g. '1', '2', '3', etc.
+  #
+  # Examples: is1.1, is2.1, is-itb1.4, twiki.2, glidein-int.1, puppet-test.3
+  #
+  # There are a few odd exceptions such as ds-bl-02.2 and yum-internal-5-32.1.
+  # Still, there is never a period (.) anywhere in the name of any VM except to
+  # divide the rest of the name from the VM version.
+  #
+  # Like cmp and <=>, returns -1 if the first argument comes first, 1 if the
+  # second one comes first, and 0 if they are identical.
+  my($a, $b) = @_;
+  return undef unless defined $a and defined $b;
+  my $a_name = $a->get_name;
+  my $b_name = $b->get_name;
+  my($a_short, $a_vers) = split /\./, $a_name;
+  my($b_short, $b_vers) = split /\./, $b_name;
+  if($a_short eq $b_short) {
+    return $a_vers <=> $b_vers;
+  } else {
+    return $a_short cmp $b_short;
+  }
+}
+
+sub get_domains($;$) {
+  # Given a Sys::Virt object, return a list of domains, sorted by name.  If the
+  # second argument is true, return only the active domains.
+  my($vmm, $activeonly) = @_;
+  my @domains = $vmm->list_all_domains();
+  if($activeonly) {
+    @domains = grep { $_->is_active() } @domains;
+  }
+  @domains = sort { vm_sorter $a, $b } @domains;
+  return @domains;
+}
+
+sub handle_config() {
+  # The 'config' parameter just tells the module to list out some metadata
+  # about the return values.
+
+  my $vmm = sys_virt_obj;
+  my @domains = get_domains $vmm, 1;
+  my $order = join ' ', map { $_->get_name() } @domains;
+  my $da_ram = system_ram;
+  my $ram_units = $da_ram->in_min_base2_unit();
+  print <<"EOF";
+graph_title Libvirt Virtual RAM Defined
+graph_vlabel Amount of Virtual RAM
+graph_args --base 1024 --lower-limit 0
+graph_category libvirt
+graph_info Amount of virtual RAM defined for each active guest domain, as well as the total for all guest domains on this host.  This doesn't look at how much RAM the domains are actually using, just how much virtual RAM each has been confugured with.  Inactive domains, if any, are not shown, because inactive VMs don't occupy any host RAM.  Total host ram: $ram_units.
+graph_order $order
+EOF
+  ;
+  my $counter = 0;
+  foreach my $dom (@domains) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $draw = ($counter == 0)?'AREA':'STACK';
+    print <<"EOF";
+$quant_domname.label $domname
+$quant_domname.draw $draw
+$quant_domname.info Amount of virtual RAM defined for guest domain '$domname'
+EOF
+    ;
+    ++$counter;
+  }
+  my $onegb = DataAmount->new('1GiB')->bytes;
+  my $ram_bytes = $da_ram->bytes;
+  my $warning = $ram_bytes - $onegb;
+  my $critical = $ram_bytes*4 - $onegb;
+  print <<"EOF"
+total.label TOTAL
+total.draw LINE2
+total.info Total amount of virtual RAM defined for all guest domains
+total.warning $warning
+total.critical $critical
+EOF
+    ;
+  return 0;
+}
+
+sub print_data() {
+  # Lacking a parameter, find and print the data.
+
+  my $vmm = sys_virt_obj;
+  my $total = 0;
+  foreach my $dom (get_domains $vmm, 1) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $ram = DataAmount->new($dom->get_info()->{memory}.'kiB')->in('B');
+    printf "%s.value %d\n", $quant_domname, $ram;
+    $total += $ram;
+  }
+  printf "total.value %d\n", $total;
+  return 0;
+}
+
+##############################################################################
+# Main script
+##############################################################################
+
+if($ARGV[0]) {
+  if(exists $HANDLER{$ARGV[0]}) {
+    exit &{$HANDLER{$ARGV[0]}};
+  } else {
+    die "Unknown parameter $ARGV[0]\n";
+  }
+}
+print_data;
+
+# vim:syntax=perl

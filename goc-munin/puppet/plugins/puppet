@@ -1,0 +1,90 @@
+#!/usr/bin/perl -w
+#
+# Plugin to monitor time since last Puppet run
+# By Thomas Lee <thomlee@iu.edu>
+# Begun 2012/03/14
+# Last modified 2012/03/14
+#
+# Parameters understood:
+#
+# 	config   (required)
+# 	autoconf (optional - used by munin-node-configure)
+#       suggest  (optional - used by munin-node-configure)
+#
+# Magic markers - optional - used by installation scripts and
+# munin-node-configure:
+#
+
+use strict;
+
+$ENV{PATH} = join(':', qw(/sbin
+			  /bin
+			  /usr/sbin
+			  /usr/bin
+			  /usr/local/sbin
+			  /usr/local/bin
+			  /opt/sbin
+			  /opt/bin));
+
+# The path to the classes.txt file, which is rebuilt whenever Puppet runs
+my $CLASSES = '/etc/puppet/classes.txt';
+
+###############################################################################
+# Subroutines
+###############################################################################
+
+sub age_of_classes() {
+  # Return the age in seconds of the file $CLASSES
+
+  my @stat = stat($CLASSES);
+  my $time = time();
+  return($time - $stat[9]);
+}
+
+###############################################################################
+# Subroutines over, main program now
+###############################################################################
+
+# All Munin modules should understand the 'autoconf' parameter, which
+# just prints 'yes' or 'no (with possible explanation)' depending on
+# whether there is a problem running it, returning 0 if yes and 1 if
+# no
+
+if($ARGV[0] and $ARGV[0] eq 'autoconf') {
+  print("yes\n");
+  exit(0);
+}
+
+# The 'suggest' parameter I'm not totally clear on -- perhaps it
+# suggests some sort of configuration value
+
+if($ARGV[0] and $ARGV[0] eq 'suggest') {
+  exit 0;
+}
+
+# The 'config' parameter just tells the module to list out some
+# metadata about the return values
+
+if($ARGV[0] and $ARGV[0] eq 'config') {
+  print(<<"EOF");
+graph_title Time since last Puppet run
+graph_vlabel Time (min)
+graph_args --base 1000 --lower-limit 0
+graph_category Puppet
+graph_info Indicates time in minutes since Puppet last ran on the system
+since.label Time since Puppet
+since.draw LINE2
+since.info Time since last Puppet run
+since.warning 60
+since.critical 180
+EOF
+  ;
+  exit 0;
+}
+
+# Lacking a parameter, print the data
+
+printf("since.value %f\n", &age_of_classes()/60.0);
+exit 0;
+
+# vim:syntax=perl

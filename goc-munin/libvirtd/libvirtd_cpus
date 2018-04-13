@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+
+# Munin plugin to monitor the defined virtual CPUs on a libvirt host
+# by Tom Lee <thomlee@iu.edu
+# Begun 2015-03-09
+# Last modified 2015-03-23
+
+# Parameters understood:
+#	config		(required)
+#	autoconf	(optional -- used by munin-node-configure)
+#	suggest	(optional - used by munin-node-configure)
+
+use strict;
+use warnings;
+use IO::File;
+use Sys::Virt;
+
+$ENV{PATH} =
+  join ':',
+  qw(
+      /sbin
+      /bin
+      /usr/sbin
+      /usr/bin
+      /usr/local/sbin
+      /usr/local/bin
+      /opt/sbin
+      /opt/bin
+   );
+
+my %HANDLER =
+  (
+   autoconf => \&handle_autoconf,
+   suggest => \&handle_suggest,
+   snmpconf => \&handle_snmpconf,
+   config => \&handle_config,
+  );
+
+##############################################################################
+# Subroutines
+##############################################################################
+
+sub sys_virt_obj() {
+  # Returns a Sys::Virt object.
+  return Sys::Virt->new
+    (
+     uri => 'qemu:///system',
+     readonly => 1,
+    );
+}
+
+sub system_cores() {
+  # Returns the total number of cores the system has.
+
+  my $total = 0;
+  my $fh = new IO::File('</proc/cpuinfo');
+  my @cpuinfolines = <$fh>;
+  chomp @cpuinfolines;
+  my @corelines = grep { /^\s*processor\s*:/i } @cpuinfolines;
+  my %cores = map {
+    my(undef, $n) = split /:/, $_;
+    ($n => 1);
+  } @corelines;
+  my @cores = keys %cores;
+  return $#cores + 1;
+}
+
+sub handle_autoconf() {
+  # See if this is a libvirt host.  Simplest method: See if there's a 'libvirt'
+  # RPM installed.
+
+  if(((system 'rpm -q --qf "" libvirt') >> 8) == 0) {
+    print "yes\n";
+    return 0;
+  } else {
+    print "no (libvirt not installed)\n";
+    return 1;
+  }
+}
+
+sub handle_suggest() {
+  # If this is a wildcard plugin, its name should end in '_' and it should have
+  # magic marker '#%# capabilities=suggest'.  This routine should print a list
+  # of the possible suffixes to appear after that underscore in the symlinks.
+
+  return 1;
+}
+
+sub handle_snmpconf() {
+  # Print require, index and number lines in the case that this plugin is an
+  # SNMP plugin.
+
+  return 1;
+}
+
+sub vm_sorter($$) {
+  # Sort two domains by name -- by GOC convention a VM's name matches regex
+  # '^[a-z0-9-]+.[0-9]+$', or more specifically
+  # '^[a-z-]+(-[a-z]+)?[0-9]*\.[0-9]+$'.  Put another way it is
+  # <service>[-<variant>][<instance number>].<version>, where
+  #
+  # <service> = name of service, e.g. 'is', 'myosg', 'oasis-replica', 'oim',
+  # 'repo', 'twiki'
+  # <variant> = variant instance, e.g. 'dev', 'itb', 'test'
+  # <instance number> = digits, such as '1', '2', '3', etc.
+  # <version> = version of VM, e.g. '1', '2', '3', etc.
+  #
+  # Examples: is1.1, is2.1, is-itb1.4, twiki.2, glidein-int.1, puppet-test.3
+  #
+  # There are a few odd exceptions such as ds-bl-02.2 and yum-internal-5-32.1.
+  # Still, there is never a period (.) anywhere in the name of any VM except to
+  # divide the rest of the name from the VM version.
+  #
+  # Like cmp and <=>, returns -1 if the first argument comes first, 1 if the
+  # second one comes first, and 0 if they are identical.
+  my($a, $b) = @_;
+  return undef unless defined $a and defined $b;
+  my $a_name = $a->get_name;
+  my $b_name = $b->get_name;
+  my($a_short, $a_vers) = split /\./, $a_name;
+  my($b_short, $b_vers) = split /\./, $b_name;
+  if($a_short eq $b_short) {
+    return $a_vers <=> $b_vers;
+  } else {
+    return $a_short cmp $b_short;
+  }
+}
+
+sub get_domains($;$) {
+  # Given a Sys::Virt object, return a list of domains, sorted by name.  If the
+  # second argument is true, return only the active domains.
+  my($vmm, $activeonly) = @_;
+  my @domains = $vmm->list_all_domains();
+  if($activeonly) {
+    @domains = grep { $_->is_active() } @domains;
+  }
+  @domains = sort { vm_sorter $a, $b } @domains;
+  return @domains;
+}
+
+sub handle_config() {
+  # The 'config' parameter just tells the module to list out some metadata
+  # about the return values.
+
+  my $vmm = sys_virt_obj;
+  my @domains = get_domains $vmm, 1;
+  my $order = join ' ', map { $_->get_name() } @domains;
+  my $cores = system_cores;
+  print <<"EOF";
+graph_title Libvirt Virtual CPUs Defined
+graph_vlabel Number of Virtual CPUs
+graph_args --base 1000 --lower-limit 0
+graph_category libvirt
+graph_info Number of virtual CPUs defined for each active guest domain, as well as the total for all guest domains on this host.  Inactive domains, if any, are not shown.  The system has $cores real cores.
+graph_order $order
+EOF
+  ;
+  my $counter = 0;
+  foreach my $dom (@domains) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $draw = ($counter == 0)?'AREA':'STACK';
+    print <<"EOF";
+$quant_domname.label $domname
+$quant_domname.draw $draw
+$quant_domname.info Number of virtual CPUs defined for guest domain '$domname'
+EOF
+    ;
+    ++$counter;
+  }
+  my $warning = $cores - 1;
+  my $critical = $cores*4 - 1;
+  print <<"EOF"
+total.label TOTAL
+total.draw LINE2
+total.info Total number of virtual CPUs defined for all guest domains
+total.warning $warning
+total.critical $critical
+EOF
+    ;
+  return 0;
+}
+
+sub print_data() {
+  # Lacking a parameter, find and print the data.
+
+  my $vmm = sys_virt_obj;
+  my $total = 0;
+  foreach my $dom (get_domains $vmm, 1) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $vcpus = $dom->get_info->{nrVirtCpu};
+    printf "%s.value %d\n", $quant_domname, $vcpus;
+    $total += $vcpus;
+  }
+  printf "total.value %d\n", $total;
+  return 0;
+}
+
+##############################################################################
+# Main script
+##############################################################################
+
+if($ARGV[0]) {
+  if(exists $HANDLER{$ARGV[0]}) {
+    exit &{$HANDLER{$ARGV[0]}};
+  } else {
+    die "Unknown parameter $ARGV[0]\n";
+  }
+}
+print_data;
+
+# vim:syntax=perl

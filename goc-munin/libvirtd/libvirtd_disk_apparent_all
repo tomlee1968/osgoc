@@ -1,0 +1,231 @@
+#!/usr/bin/perl
+
+# Munin plugin to monitor the apparent disk space used by each defined domain on a libvirt host (including inactive ones)
+# by Tom Lee <thomlee@iu.edu
+# Begun 2015-03-12
+# Last modified 2015-03-23
+
+#%# family: auto
+#%# capabilities: autoconf
+
+use strict;
+use warnings;
+use DataAmount;
+use IO::File;
+use Sys::Virt;
+use XML::Twig;
+
+$ENV{PATH} =
+  join ':',
+  qw(
+      /sbin
+      /bin
+      /usr/sbin
+      /usr/bin
+      /usr/local/sbin
+      /usr/local/bin
+      /opt/sbin
+      /opt/bin
+   );
+
+my %HANDLER =
+  (
+   autoconf => \&handle_autoconf,
+   suggest => \&handle_suggest,
+   snmpconf => \&handle_snmpconf,
+   config => \&handle_config,
+  );
+
+##############################################################################
+# Subroutines
+##############################################################################
+
+sub sys_virt_obj() {
+  # Returns a Sys::Virt object.
+  return Sys::Virt->new
+    (
+     uri => 'qemu:///system',
+     readonly => 1,
+    );
+}
+
+sub handle_autoconf() {
+  # See if this is a libvirt host.  Simplest method: See if there's a 'libvirt'
+  # RPM installed.
+
+  if(((system 'rpm -q --qf "" libvirt') >> 8) == 0) {
+    print "yes\n";
+    return 0;
+  } else {
+    print "no (libvirt not installed)\n";
+    return 1;
+  }
+}
+
+sub handle_suggest() {
+  # If this is a wildcard plugin, its name should end in '_' and it should have
+  # magic marker '#%# capabilities=suggest'.  This routine should print a list
+  # of the possible suffixes to appear after that underscore in the symlinks.
+
+  return 1;
+}
+
+sub handle_snmpconf() {
+  # Print require, index and number lines in the case that this plugin is an
+  # SNMP plugin.
+
+  return 1;
+}
+
+sub vol_space_total() {
+  # Returns a DataAmount representing the amount of space on /var/lib/libvirt.
+  my @df = split /\s+/, `df -B 1 /var/lib/libvirt | tail -n 1`;
+  chomp @df;
+  return DataAmount->new($df[1].'B');
+}
+
+sub vm_sorter($$) {
+  # Sort two domains by name -- by GOC convention a VM's name matches regex
+  # '^[a-z0-9-]+.[0-9]+$', or more specifically
+  # '^[a-z-]+(-[a-z]+)?[0-9]*\.[0-9]+$'.  Put another way it is
+  # <service>[-<variant>][<instance number>].<version>, where
+  #
+  # <service> = name of service, e.g. 'is', 'myosg', 'oasis-replica', 'oim',
+  # 'repo', 'twiki'
+  # <variant> = variant instance, e.g. 'dev', 'itb', 'test'
+  # <instance number> = digits, such as '1', '2', '3', etc.
+  # <version> = version of VM, e.g. '1', '2', '3', etc.
+  #
+  # Examples: is1.1, is2.1, is-itb1.4, twiki.2, glidein-int.1, puppet-test.3
+  #
+  # There are a few odd exceptions such as ds-bl-02.2 and yum-internal-5-32.1.
+  # Still, there is never a period (.) anywhere in the name of any VM except to
+  # divide the rest of the name from the VM version.
+  #
+  # Like cmp and <=>, returns -1 if the first argument comes first, 1 if the
+  # second one comes first, and 0 if they are identical.
+  my($a, $b) = @_;
+  return undef unless defined $a and defined $b;
+  my $a_name = $a->get_name;
+  my $b_name = $b->get_name;
+  my($a_short, $a_vers) = split /\./, $a_name;
+  my($b_short, $b_vers) = split /\./, $b_name;
+  if($a_short eq $b_short) {
+    return $a_vers <=> $b_vers;
+  } else {
+    return $a_short cmp $b_short;
+  }
+}
+
+sub get_domains($;$) {
+  # Given a Sys::Virt object, return a list of domains, sorted by name.  If the
+  # second argument is true, return only the active domains.
+  my($vmm, $activeonly) = @_;
+  my @domains = $vmm->list_all_domains();
+  if($activeonly) {
+    @domains = grep { $_->is_active() } @domains;
+  }
+  @domains = sort { vm_sorter $a, $b } @domains;
+  return @domains;
+}
+
+sub handle_config() {
+  # The 'config' parameter just tells the module to list out some metadata
+  # about the return values.
+
+  my $vmm = sys_virt_obj;
+  my @domains = get_domains $vmm;
+  my $order = join ' ', map { $_->get_name() } @domains;
+  my $da_space = vol_space_total;
+  my $space_units = $da_space->in_min_base10_unit();
+  print <<"EOF";
+graph_title Apparent disk space used by all domains
+graph_vlabel Apparent disk space
+graph_args --base 1000 --lower-limit 0
+graph_category libvirt
+graph_info Total apparent disk space used by libvirt domains on this host.  Includes domains that are defined but inactive, because, after all, the virtual disk image files of an inactive VM still take up disk space.  Uses the apparent size of sparse files, which, although not the best gauge of the space taken up by the files now, is still useful, as it is the maximum amount of disk space the files can use on the host.  This is the best graph to look at if you want to know whether the existing VMs have the potential to outgrow the disk space on the host.  Total space on host allocated for VM disk images: $space_units.
+graph_order $order
+EOF
+  ;
+  my $counter = 0;
+  foreach my $dom (@domains) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $draw = ($counter == 0)?'AREA':'STACK';
+    print <<"EOF";
+$quant_domname.label $domname
+$quant_domname.draw $draw
+$quant_domname.info Total apparent disk space used by guest domain '$domname'
+EOF
+    ;
+    ++$counter;
+  }
+  my $onegb = DataAmount->new('1GB')->bytes;
+  my $space_bytes = $da_space->bytes;
+  my $warning = $space_bytes - $onegb;
+  my $critical = $space_bytes*4 - $onegb;
+  print <<"EOF"
+total.label TOTAL
+total.draw LINE2
+total.info Total apparent disk space used by all defined guest domains
+total.warning $warning
+total.critical $critical
+EOF
+    ;
+  return 0;
+}
+
+sub dom_disk($) {
+  # Returns the total space (actual used blocks) used by the given domain's
+  # disks on the host.
+  my($dom) = @_;
+  my $t = XML::Twig->new();
+  $t->parse($dom->get_xml_description());
+  my @disk_elts = $t->get_xpath('./devices/disk[@type="file"]');
+  my $used_size = 0;
+  foreach my $disk_elt (@disk_elts) {
+    my $source_elt = $disk_elt->first_child('source');
+    next unless defined $source_elt;
+    my $f = $source_elt->att('file');
+    unless(-e $f) {
+      warn(sprintf("VM '%s' reports disk image '%s', which doesn't exist\n", $dom->get_name, $f));
+      next;
+    }
+    my($du) = split /\s+/, `du --block-size=1 --apparent-size $f`;
+    $used_size += $du;
+  }
+  return $used_size;
+}
+
+sub print_data() {
+  # Lacking a parameter, find and print the data.
+
+  my $vmm = sys_virt_obj;
+  my $total = 0;
+  foreach my $dom (get_domains $vmm) {
+    my $domname = $dom->get_name();
+    my $quant_domname = $domname;
+    $quant_domname =~ s/\./_/g;
+    my $disk = dom_disk $dom;
+    printf "%s.value %d\n", $quant_domname, $disk;
+    $total += $disk;
+  }
+  printf "total.value %d\n", $total;
+  return 0;
+}
+
+##############################################################################
+# Main script
+##############################################################################
+
+if($ARGV[0]) {
+  if(exists $HANDLER{$ARGV[0]}) {
+    exit &{$HANDLER{$ARGV[0]}};
+  } else {
+    die "Unknown parameter $ARGV[0]\n";
+  }
+}
+print_data;
+
+# vim:syntax=perl

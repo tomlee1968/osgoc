@@ -1,0 +1,177 @@
+#!/usr/bin/perl -w
+#
+# Plugin to monitor the age of any configured x509 certificates
+# By Thomas Lee <thomlee@indiana.edu>
+# Last modified 2012/07/09
+#
+# Parameters understood:
+#
+# 	config   (required)
+# 	autoconf (optional - used by munin-node-configure)
+#       suggest  (optional - used by munin-node-configure)
+#
+# Magic markers - optional - used by installation scripts and
+# munin-node-configure:
+#
+# certs: comma-separated list of cert files to check
+
+use strict;
+use Date::Parse;
+
+$ENV{PATH} = join(':', qw(/sbin
+			  /bin
+			  /usr/sbin
+			  /usr/bin
+			  /usr/local/sbin
+			  /usr/local/bin
+			  /opt/sbin
+			  /opt/bin));
+
+###############################################################################
+# Subroutines
+###############################################################################
+
+sub x509cmd($) {
+  # Just issue an 'openssl x509' command with the given parameters, either
+  # given as an array or as a string separated with spaces.
+
+  my($params) = join(' ', @_);
+
+  my($cmd) = "openssl x509 $params";
+  my($line) = `$cmd`;
+  chomp($line);
+  return($line);
+}
+
+sub x509date_to_timestamp($) {
+  # Given an x509 date return string, parse it and turn the date into a Unix
+  # timestamp.  Example of such a string:
+
+  # notAfter=Nov  9 16:17:04 2010 GMT
+
+  # Note that this subroutine requires str2time, located in the Date::Parse
+  # module.
+
+  my($string) = @_;
+
+  my(undef, $datestring) = split(/\s*=\s*/, $string);
+  return str2time($datestring);
+}
+
+sub get_start_ts($) {
+  # Get the start date of the given certificate (give the full path to the file
+  # containing the certificate), in Unix timestamp format.
+
+  my($path) = @_;
+
+  return(&x509date_to_timestamp(&x509cmd("-startdate -noout -in $path")));
+}
+
+sub get_end_ts($) {
+  # Get the end date of the given certificate (give the full path to the file
+  # containing the certificate), in Unix timestamp format.
+
+  my($path) = @_;
+
+  return(&x509date_to_timestamp(&x509cmd("-enddate -noout -in $path")));
+}
+
+###############################################################################
+# Subroutines over, main program now
+###############################################################################
+
+my($certs) = $ENV{certs} || '';
+chomp($certs);
+$certs =~ s/\s*,\s*/,/g;	# Get rid of any spaces surrounding commas
+$certs =~ s/,+/,/g;		# Get rid of multiple consecutive commas
+$certs =~ s/^,//;		# Get rid of leading commas
+$certs =~ s/,$//;		# Get rid of trailing commas
+my(@certs) = grep {
+  $_
+} split(/\s*,\s*/, $certs);	# Filter out blank values
+
+# All Munin modules should understand the 'autoconf' parameter, which
+# just prints 'yes' or 'no (with possible explanation)' depending on
+# whether there is a problem running it, returning 0 if yes and 1 if
+# no
+
+if($ARGV[0] and $ARGV[0] eq 'autoconf') {
+  unless($certs) {
+    print("no (no certs defined in \$ENV{certs})\n");
+    exit(1);
+  }
+  unless(@certs > 0) {
+    print("no (no certs defined in \$ENV{certs})\n");
+    exit(1);
+  }
+  foreach my $cert (@certs) {
+    unless(-e $cert) {
+      print("no ($cert does not exist)\n");
+      exit(1);
+    }
+  }
+  print("yes\n");
+  exit(0);
+}
+
+# The 'suggest' parameter I'm not totally clear on -- perhaps it
+# suggests some sort of configuration value
+
+if($ARGV[0] and $ARGV[0] eq 'suggest') {
+  exit 0;
+}
+
+# The 'config' parameter just tells the module to list out some
+# metadata about the return values
+
+if($ARGV[0] and $ARGV[0] eq 'config') {
+  print(<<"EOF");
+graph_title Certificate Age
+graph_vlabel days
+graph_args --base 1000 --lower-limit 0
+graph_category Certificates
+graph_info Indicates age in days of configured authentication certificate(s)
+EOF
+  ;
+  my($count) = 1;
+  foreach my $cert (@certs) {
+    my($name) = sprintf("cert%02d", $count);
+    unless(-e $cert) {
+      next;
+    }
+    my($start_ts) = &get_start_ts($cert);
+    my($end_ts) = &get_end_ts($cert);
+    my($lifespan_d) = ($end_ts - $start_ts)/86400.0;
+    my($warning_d) = $lifespan_d - 30.0;
+    my($critical_d) = $lifespan_d - 14.0;
+    print(<<"EOF");
+$name.label $cert
+$name.draw LINE2
+$name.info Age of $cert in days (fractional).
+$name.warning 0:$warning_d
+$name.critical 0:$critical_d
+EOF
+  ;
+    ++$count;
+  }
+  exit 0;
+}
+
+# Lacking a parameter, print the data
+
+my($count) = 1;
+foreach my $cert (@certs) {
+  my($name) = sprintf("cert%02d", $count);
+  unless(-e $cert) {
+    print("$name.value nan\n");
+    next;
+  }
+  my($start_ts) = &get_start_ts($cert);
+  my($age_d) = (time() - $start_ts)/86400.0;
+  printf("%s.value %02g\n", $name, $age_d);
+  ++$count;
+}
+
+exit 0;
+
+# vim:syntax=perl
