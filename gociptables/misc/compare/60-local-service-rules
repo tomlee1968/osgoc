@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2008/09/18
+# last modified 2013/07/12
+
+# This file is local to dubois.uits.indiana.edu and should contain only rules
+# specific to that server.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Local rules
+###############################################################################
+
+# Allow whitelisted hosts to connect via OpenVPN
+#$ITFAI -p tcp --dport 1194 -j known_ok
+
+# Allow receiving smtp mail from known hosts
+#$ITFAI -p tcp --dport smtp -j known_ok
+
+# Permit http and https from anywhere
+$ITFAI -j web_ok
+
+# Permit TSM backups
+$ITFAI -j tsm_ok
+
+# Allow SMTP from IU mail servers -- this is so Tom can receive email!!
+#$ITFAI -j postfix_ok
+
+# Allow IMAP from IU wireless IPs -- this is so Tom can get email!!
+#$ITFAI -s 140.182.0.0/16 -j imap_ok
+
+# Allow IMAP from known hosts -- this is so Tom can get email!!
+#$ITFAI -j imap_known_ok
+
+# Allow ssh from ODI network -- temporary TJL 2010-06-23
+#$ITFAI -p tcp -s 129.79.72.128/255.255.255.128 --dport ssh -j ACCEPT
+
+# There appear to be a bunch of SMTP packets coming in from UITS servers -- what are they?
+#$ITFAI -p tcp -s 129.79.1.0/255.255.255.0 --dport smtp -j ACCEPT
+
+# These are GRNOC -- what are they?
+#$ITFAI -p tcp -s 149.165.129.24/32 --dport smtp -j ACCEPT
+
+# This is for testing OpenNMS
+#$ITFAI -p tcp --dport 8880 -j known_ok
+
+# This is for installs from FutureGrid
+#$ITFAI -s 149.165.146.150/32 -j ACCEPT
+
+# Allow Puppet
+#$ITFAI -p tcp --dport 8140 -j private_vlan_ok

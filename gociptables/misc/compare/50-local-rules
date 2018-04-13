@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# Some sample local firewall rules
+# By Tom Lee <thomlee@indiana.edu>
+
+# This file varies from one server to another, but if it is not present,
+# puppet will copy this file into place as an initial starting point.
+
+# These things are automatically done by earlier scripts:
+
+#* All loopback packets are allowed.
+#* All ICMP packets are allowed.
+#* All LAN packets are allowed, on machines that are on the LAN.
+#* All packets coming in on established or related connections are allowed.
+#* SSH from the GRNOC's Nagios monitor is allowed.
+#* SSH from the GOC's internal Nagios monitor is allowed.
+#* SSH connections from workstations on the known whitelist are allowed.
+
+# Nothing in the above list needs to be done here.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Rules
+###############################################################################
+
+# Uncomment these if you want these services
+
+# http and https (TCP ports 80 and 443):
+#$ITFAI -j web_ok
+
+# Alternate http and https (TCP ports 8080 and 8443):
+#$ITFAI -j alt_web_ok
+
+# CEMon (TCP port 14001):
+#$ITFAI -j cemon_ok
+
+# BDII (TCP ports 2170:2172):
+#$ITFAI -j bdii_ok
+
+# Interoperability BDII (TCP ports 2180:2182):
+#$ITFAI -j bdii_intop_ok
+
+# Temporary Globus work (TCP ports 40000:44999):
+#$ITFAI -j globus_temp_ok
+
+# TSM Backup (TCP ports 1581, 2123:2124):
+#$ITFAI -j tsm_ok
+
+# VMWare Server Console (TCP port 904, known hosts only):
+#$ITFAI -j vmware_known_ok

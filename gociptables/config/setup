@@ -1,0 +1,416 @@
+# (no "shebang" line because this is meant to be sourced by other scripts)
+# Setup -- shortcuts, etc. for iptables scripts
+# By Thomas Lee <thomlee@indiana.edu>
+# Begun 2010/12/06
+# Last modified 2014/10/15
+
+# All the iptables scripts use some subset of these definitions, so I thought
+# I'd make them all available in a single place so the other scripts can just
+# source this file, instead of having to repeatedly define them every time.
+
+###############################################################################
+# Set the path, for security
+###############################################################################
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/opt/sbin:/opt/bin
+
+##############################################################################
+# Settings
+##############################################################################
+
+# The IPv4 and IPv6 prefixes for VLAN 259 (the public VLAN) and VLAN 4020 (the
+# private VLAN), for reference.
+PF4_VLAN259=129.79.53.0/24
+PF4_VLAN4020=192.168.96.0/22
+PF6_VLAN259=2001:18e8:2:6::/64
+PF6_VLAN4020=fd2f:6feb:37:1::/48
+
+###############################################################################
+# Shortcuts
+###############################################################################
+
+# For even more security, specify location of iptables command
+IPTABLES=/sbin/ip6tables
+IPTABLES4=/sbin/iptables
+
+# Now we have shortcuts for the seven tables: $ITF4 for "iptables -t filter",
+# $ITR for "ip6tables -t raw", etc.
+
+# By far the most frequently-used operation is -A (append a rule to a chain),
+# so I've included shortcuts for appending to each table's built-in chains. 
+
+# Shortcuts for filter table, which has only INPUT, OUTPUT and FORWARD chains
+ITF="$IPTABLES -t filter"
+ITFAI="$ITF -A INPUT"
+ITFAO="$ITF -A OUTPUT"
+ITFAF="$ITF -A FORWARD"
+ITF4="$IPTABLES4 -t filter"
+ITFAI4="$ITF4 -A INPUT"
+ITFAO4="$ITF4 -A OUTPUT"
+ITFAF4="$ITF4 -A FORWARD"
+
+# Shortcuts for NAT table, which has only PREROUTING, POSTROUTING, and OUTPUT
+# chains (ip6tables has no NAT table)
+ITN4="$IPTABLES4 -t nat"
+ITNAPRE4="$ITN4 -A PREROUTING"
+ITNAPOST4="$ITN4 -A POSTROUTING"
+ITNAO4="$ITN4 -A OUTPUT"
+
+# Shortcuts for mangle table, which has all five chains
+ITM="$IPTABLES -t mangle"
+ITMAPRE="$ITM -A PREROUTING"
+ITMAO="$ITM -A OUTPUT"
+ITMAI="$ITM -A INPUT"
+ITMAF="$ITM -A FORWARD"
+ITMAPOST="$ITM -A POSTROUTING"
+ITM4="$IPTABLES4 -t mangle"
+ITMAPRE4="$ITM4 -A PREROUTING"
+ITMAO4="$ITM4 -A OUTPUT"
+ITMAI4="$ITM4 -A INPUT"
+ITMAF4="$ITM4 -A FORWARD"
+ITMAPOST4="$ITM4 -A POSTROUTING"
+
+# Shortcuts for raw table, which has only PREROUTING and OUTPUT chains
+ITR="$IPTABLES -t raw"
+ITRAPRE="$ITR -A PREROUTING"
+ITRAO="$ITR -A OUTPUT"
+ITR4="$IPTABLES4 -t raw"
+ITRAPRE4="$ITR4 -A PREROUTING"
+ITRAO4="$ITR4 -A OUTPUT"
+
+# Read quickdata
+#if [[ -e /etc/iptables.d/quickdata ]]; then
+#    . /etc/iptables.d/quickdata
+#fi
+
+###############################################################################
+# Functions
+###############################################################################
+
+subchain() {
+
+    # Make an IPv6 filter table subchain with the given name that accepts
+    # packets from the given source specifier.  A frequently-required task.
+    #
+    # Example:
+    # subchain example_chain fd2f:6feb:37::01:0203:0405/48
+    # ...
+    # $ITF -p tcp --dport $PORT -j example_ok
+
+    local name=$1 ipspec=$2
+
+    $ITF -N $name
+    if [ "$ipspec" ]; then
+        $ITF -A $name -s $ipspec -j ACCEPT
+    fi
+    $ITF -A $name -j RETURN
+}
+
+subchain4() {
+    # Make an IPv4 filter table subchain with the given name that accepts
+    # packets from the given source specifier.  A frequently-required task.
+    #
+    # Example:
+    # subchain example_chain 123.45.67.89/32
+    # ...
+    # $ITF4 -p tcp --dport $PORT -j example_ok
+
+    local name=$1 ipspec=$2
+
+    $ITF4 -N $name
+    if [ "$ipspec" ]; then
+	$ITF4 -A $name -s $ipspec -j ACCEPT
+    fi
+    $ITF4 -A $name -j RETURN
+}
+
+expand_ipv6() {
+    # Take an IPv6 address and expand it out to bits -- that is, a string of 1
+    # and 0 characters.  This is needed for ipv6_match_prefix, to see whether
+    # the first N bits of the address match the prefix.
+    local ip=$1 addr ipwords i j
+    addr="${ip%%/*}"	# Ignore mask if any
+    # Leading and trailing double colons confuse the algorithm I'm
+    # about to use; replace them with leading/trailing single colons.
+    local remain="$addr"
+    remain="${remain/#::/:}"
+    remain="${remain/%::/:}"
+    # Newer versions of bash don't initialize arrays to empty by
+    # default.
+    unset ipwords
+    while [[ "${remain/:/}" != "$remain" ]]; do
+	# Snip words off remain and add them to ipwords.
+	ipwords=("${ipwords[@]}" "${remain%%:*}")
+	remain="${remain#*:}"
+    done
+    ipwords=("${ipwords[@]}" "$remain")
+    # If there's an empty string in ipwords, replace it with as many
+    # zeros as necessary to make ipwords have 8 elements.
+    local numzeros=$((9 - ${#ipwords[@]}))
+    local ipwordsave=("${ipwords[@]}")
+    unset ipwords
+    for i in "${ipwordsave[@]}"; do
+	if [[ -n "$i" ]]; then
+	    ipwords=("${ipwords[@]}" "$i")
+	else
+	    for ((j=0; j<numzeros; j++)); do
+		ipwords=("${ipwords[@]}" "0")
+	    done
+	fi
+    done
+    local ipword ipstring ipnybble bit binstring
+    # Make ipstring, with 4 hex characters per word.
+    for i in "${ipwords[@]/#/0x}"; do
+	printf -v ipword "%04x" "$i"
+	ipstring="$ipstring$ipword"
+    done
+    # Convert each hex character in ipstring to 4 binary characters.
+    for ((i=0; i<${#ipstring}; i++)); do
+	ipnybble="0x${ipstring:$i:1}"
+	for ((j=3; j>=0; j--)); do
+	    printf -v bit "%u" $(( (ipnybble >> j) & 1 ))
+	    binstring="$binstring$bit"
+	done
+    done
+    echo $binstring
+}
+
+expand_ipv4() {
+    # Take an IPv4 address and expand it out to bits -- that is, a string of 1
+    # and 0 characters.  This is needed by ipv4_match_prefix, to see whether
+    # the first N bits of the address match the prefix.
+    local ip=$1 addr ipwords i j
+    addr="${ip%%/*}"	# Ignore mask if any
+    local remain="$addr"
+    # Newer versions of bash don't initialize arrays to empty by
+    # default.
+    unset ipwords
+    while [[ "${remain/./}" != "$remain" ]]; do
+	# Snip words off remain and add them to ipwords.
+	ipwords=("${ipwords[@]}" "${remain%%.*}")
+	remain="${remain#*.}"
+    done
+    ipwords=("${ipwords[@]}" "$remain")
+    local ipword ipstring ipnybble bit binstring
+    # Make ipstring, with 2 hex characters per word.
+    for i in "${ipwords[@]}"; do
+	printf -v ipword "%02x" "$i"
+	ipstring="$ipstring$ipword"
+    done
+    # Convert each hex character in ipstring to 4 binary characters.
+    for ((i=0; i<${#ipstring}; i++)); do
+	ipnybble="0x${ipstring:$i:1}"
+	for ((j=3; j>=0; j--)); do
+	    printf -v bit "%u" $(( (ipnybble >> j) & 1 ))
+	    binstring="$binstring$bit"
+	done
+    done
+    echo $binstring
+}
+
+ipv6_match_prefix() {
+    # Given an IPv6 address and an IPv6 prefix (ipv6::addr/mask), return true
+    # (0) if the address matches the prefix and false (1) if not.  The findvlan
+    # function needs this to determine which interface a given IPv6 address
+    # would use.
+    local ip=$1 pfx=$2
+    local addr="${ip%%/*}"
+    local paddr="${pfx%%/*}"
+    local pmask="${pfx##*/}"
+    local ipbin=$(expand_ipv6 "$addr")
+    local pfxbin=$(expand_ipv6 "$paddr")
+    local i
+    for ((i=0; i<pmask; ++i)); do
+	if [[ "${ipbin:$i:1}" != "${pfxbin:$i:1}" ]]; then
+	    return 1
+	fi
+    done
+    return 0
+}
+
+ipv4_match_prefix() {
+    # Given an IPv4 address and an IPv4 prefix (ip.v4.ad.dr/mask), return true
+    # (0) if the address matches the prefix and false (1) if not.  The findvlan
+    # function needs this to determine which interface a given IPv4 address
+    # would use.
+    local ip=$1 pfx=$2
+    local addr="${ip%%/*}"
+    local paddr="${pfx%%/*}"
+    local pmask="${pfx##*/}"
+    local ipbin=$(expand_ipv4 "$addr")
+    local pfxbin=$(expand_ipv4 "$paddr")
+    local i
+    for ((i=0; i<pmask; ++i)); do
+	if [[ "${ipbin:$i:1}" != "${pfxbin:$i:1}" ]]; then
+	    return 1
+	fi
+    done
+    return 0
+}
+
+findvlan() {
+    # Given the IPv6 and IPv4 prefixes of a VLAN, in that order, find the
+    # interface that has an address that fits one or both prefixes.  If those
+    # are two different addresses (which is not supposed to happen), print an
+    # error message and return a null string.  Otherwise, return the interface
+    # name.
+
+    local ip=$1 ip4=$2 ifsave="$IFS"
+
+    # Get a list of all interfaces
+    local IFS=$'\n'
+    local ifs=($(ip link show | grep -Eo '^[[:space:]]*[[:digit:]]+[[:space:]]*:[[:space:]]*[^:]+' | cut -d ' ' -f 2))
+    IFS="$ifsave"
+    # See if any of those match $ip
+    local NETWORK PREFIX addrs addr found_if
+    for if in "${ifs[@]}"; do
+	# It's possible we might be listening to an additional IP
+	# address on a logical interface.  Ignore these, since we're
+	# only interested in the primary interfaces here.
+	if [[ "${if/:/}" != "$if" ]]; then
+	    continue
+	fi
+	# It's possible, too, that the interface in question might be
+	# part of a bridge or might be a slave bonded to a master, but
+	# in either of those cases it won't have its own IP address.
+	# Get the list of IP addresses on the interface.
+	IFS=$'\n'
+	addrs=($(ip -6 addr show $if | grep -Eo '^[[:space:]]*inet6[[:space:]]+[^[:space:]]+'))
+	IFS="$ifsave"
+	# This will get rid of anything before the address on each
+	# line returned.
+	addrs=("${addrs[@]##* }")
+	for addr in "${addrs[@]}"; do
+	    # See if the network and prefix of $addr match $ip.
+	    if ipv6_match_prefix "$addr" "$ip"; then
+		found_if=$if
+		break
+	    fi
+	done
+    done
+    # Similarly with IPv4.
+    local found_if4
+    for if in "${ifs[@]}"; do
+	if [[ "${if/:/}" != "$if" ]]; then
+	    continue
+	fi
+	IFS=$'\n'
+	addrs=($(ip -4 addr show $if | grep -Eo '^[[:space:]]*inet[[:space:]]+[^[:space:]]+'))
+	IFS="$ifsave"
+	addrs=("${addrs[@]##* }")
+	for addr in "${addrs[@]}"; do
+	    if ipv4_match_prefix "$addr" "$ip4"; then
+		found_if4=$if
+		break
+	    fi
+	done
+    done
+    # Now we may have found_if and/or found_if4, and if we have both,
+    # they may or may not be the same.
+    if [[ "$found_if" ]] && [[ "$found_if4" ]]; then
+	if [[ "$found_if" == "$found_if4" ]]; then
+	    echo "$found_if"
+	    return 0
+	else
+	    echo "Error: '$found_if' != '$found_if4'" > /dev/stderr
+	    echo ""
+	    return 2
+	fi
+    elif [[ "$found_if" ]]; then
+	echo "$found_if"
+	return 0
+    elif [[ "$found_if4" ]]; then
+	echo "$found_if4"
+	return 0
+    else
+	echo ""
+	return 1
+    fi
+}
+
+ip4addr() {
+    # Given an interface, look up the IPv4 address on that interface and print
+    # it, or print nothing if that interface doesn't exist.  Example:
+    #
+    # ip4addr eth0
+    # 129.79.53.53
+
+    local if=$1
+
+    ip addr show $if 2>/dev/null | sed -r -e '/inet /!d' -e '/secondary/d' -e 's/^.*inet ([[:digit:]]+(\.[[:digit:]]+){3}).*$/\1/' | head -n 1
+}
+
+ip6addr() {
+    # Given an interface, look up the IPv6 address on that interface and print
+    # it, or print nothing if that interface doesn't exist.  Example:
+    #
+    # ip6addr eth0
+    # fe80::62eb:69ff:fefe:c1
+
+    local if=$1
+
+    ip addr show $if 2>/dev/null | sed -r -e '/inet6 /!d' -e 's/^.*inet6 ([[:xdigit:]]*(:[[:xdigit:]]*){0,7}).*$/\1/' | head -n 1
+}
+
+write_quickdata() {
+    # Write the quickdata file.  Keep in mind that, if the iptables script
+    # sequence is executing at boot time, the network hardware isn't yet
+    # initialized, so asking the kernel for IP addresses via ifconfig or ip
+    # won't work.  If this is the case, don't rewrite quickdata; use the last
+    # available data.
+
+    # We need to figure out which adapters are connected to VLAN 259
+    # (the public VLAN, the one routed to the Internet) and VLAN 4020
+    # (the private, nonrouted VLAN).  Although the interface names are
+    # always eth0 and eth1 on virtual machines, on hardware they
+    # change.  If the hardware and kernel both support CNDN, we might
+    # see em1 and em2, or eno1 and eno2.  (RHEL/CentOS 6 and newer
+    # support CNDN, but on older hardware you'll still see eth0 and
+    # eth1 no matter the kernel.  RHEL 5 doesn't support CNDN, so even
+    # on newer hardware you'll still see eth0 and eth1 with an older
+    # kernel.)  If there's bridging (as there always is on a VM host,
+    # for example), we'll see br0 and br1.  If there's VPN, we might
+    # also see bridging.  If there's bonding, we might see bond0 and
+    # em2 (this is the case on irods).  Odd hardware arrangements
+    # might lead to different situations (xd-login, for example, has
+    # two 10GB Ethernet adapters, of which it uses one, and the
+    # private VLAN is connected to the third adapter, which is a 1GB
+    # Ethernet port, so its adapters will be em1 and em3).
+
+    if [[ $(ip addr show | wc -l) -gt 1 ]]; then
+	cat <<EOF > /etc/iptables.d/quickdata
+# (No "shebang" line; this is meant to be sourced)
+
+# /etc/iptables.d/quickdata
+
+# Written at start of /etc/iptables.d run for quick access
+
+IF_VLAN259=$(findvlan $PF6_VLAN259 $PF4_VLAN259)
+IF_VLAN4020=$(findvlan $PF6_VLAN4020 $PF4_VLAN4020)
+
+# IP addresses for interfaces
+IP4_VLAN259=$(ip4addr $IF_VLAN259)
+IP4_VLAN4020=$(ip4addr $IF_VLAN4020)
+IP4_ETH0=$(ip4addr eth0)
+IP4_ETH1=$(ip4addr eth1)
+IP4_EM1=$(ip4addr em1)
+IP4_EM2=$(ip4addr em2)
+IP4_TAP0=$(ip4addr tap0)
+IP4_BOND0=$(ip4addr bond0)
+IP4_BR0=$(ip4addr br0)
+IP4_BR1=$(ip4addr br1)
+IP6_VLAN259=$(ip6addr $IF_VLAN259)
+IP6_VLAN4020=$(ip6addr $IF_VLAN4020)
+IP6_ETH0=$(ip6addr eth0)
+IP6_ETH1=$(ip6addr eth1)
+IP6_EM1=$(ip6addr em1)
+IP6_EM2=$(ip6addr em2)
+IP6_TAP0=$(ip6addr tap0)
+IP6_BOND0=$(ip6addr bond0)
+IP6_BR0=$(ip6addr br0)
+IP6_BR1=$(ip6addr br1)
+
+EOF
+    fi
+    . /etc/iptables.d/quickdata
+}

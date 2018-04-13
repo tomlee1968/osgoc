@@ -1,0 +1,235 @@
+How to Deal with the IPtables Scripts
+By Tom Lee
+
+	This is just about the iptables scripts and how they're organized.  I
+hope this explains just what they have in them and how to use them.
+
+The centralized iptables.d scripts and what they do
+===================================================
+
+	It might help for me to list exactly what the global scripts do.
+
+00-global-clear: Clears out all firewall rules and user-defined chains, setting
+all default policies to ACCEPT -- in other words, sets things to a blank slate.
+
+10-global-chains: Creates some global chains for use by later scripts (note
+that it does not actually *call* any of them).  Here are some of them:
+
+log_drop: Log the packet and DROP it (with a flood limit of 5 per minute)
+log_reject: Log the packet and REJECT it
+log_accept: Log the packet and ACCEPT it
+accept_unless_suspect: ACCEPT a packet unless it's on the suspect list, defined in same file
+handle_priv: Packets from private VLAN range accepted unless from suspect host
+web_ok: Accept TCP packets on ports 80 and 443 (standard http/https)
+cemon_ok: Accept TCP packets on port 14001
+bdii_ok: Accept TCP packets on ports 2170-2172
+bdii_intop_ok: Accept TCP packets on ports 2180-2182
+grnoc_ok: Accept GRNOC packets
+uiso_ok: Accept packets from UISO security scanning system
+tsm_ok: Opens up ports that allow TSM backups to work
+mdss_ok: Allows HSI callbacks from MDSS to work
+known_ok: Allows any packet from hosts known to be those used by GOC people
+
+20-global-policies: Sets the default policies for the filter table's INPUT and
+FORWARD chains to DROP.  Also sets some extremely basic rules:
+
+ACCEPT incoming packets on established/related connections
+ACCEPT loopback packets
+
+30-global-rules: Actually calls some of the above chains, and has some other
+rules as well.  Among the things it does:
+
+ACCEPTs incoming packets from hosts on private VLAN unless they are suspect hosts
+DROPs incoming packets if they're on the global blacklist
+ACCEPTs pings from anywhere
+ACCEPTs packets from GRNOC's probes
+ACCEPTs packets from UISO's security scanners
+ACCEPTs SSH packets from known hosts (see known_ok above)
+ACCEPTs SSH packets from jump/jump2, even though they're suspect hosts
+Calls confsync-dyndns to ACCEPT packets from dynamic DNS hosts
+
+90-global-end: Does a sanity check -- if there are no rules in the filter/INPUT
+table by now, set all policies to ACCEPT, so an error won't result in a total
+bricking and a Data Center visit.  LOGs and DROPs any packet that hasn't been
+ACCEPTed so far, except for broadcast/multicast packets, which are just DROPped
+if not yet ACCEPTed.
+
+As you can see, then, the general strategy is:
+
+*) Allow outgoing traffic unimpeded in any case
+*) Allow incoming traffic on private network if not from suspect hosts
+*) Packets from suspect hosts and public networks are DROPped unless explicitly ACCEPTed
+
+About the 'setup' script
+========================
+
+	There's a script called 'setup'; this is meant to be sourced ("source
+/etc/iptables.d/setup" or ". /etc/iptables.d/setup") from the other scripts.
+It contains shortcuts and a function that make the others easier.  The
+shortcuts include:
+
+$IPTABLES: Just the full path to /sbin/iptables.  It's best not to assume that
+$PATH is set correctly in a script that is to be run by root.
+
+$ITF: Short for "$IPTABLES -t filter"; this shortens any command affecting the
+"filter" table.  For the other three tables ("nat", "mangle", and "raw"), there
+are also $ITN, $ITM, and $ITR.
+
+$ITFAI: Short for "$ITF -A INPUT".  The most common activity in these scripts
+is the appending of a rule to the "filter" table's "INPUT" chain.  There are
+also shortcuts for filter/OUTPUT ($ITFAO), filter/FORWARD ($ITFAF),
+nat/PREROUTING ($ITNAPRE), and actually for all the tables' built-in chains.
+
+	The function is:
+
+subchain <name> <ipspec>: creates a user-defined subchain in the "filter" table
+with the given name that accepts TCP packets from the given IP specifier.  This
+is a very common task.  Note that, like 20-global-chains, this does not arrange
+for anything to actually call the created chain, so a call to this function has
+no effect on the behavior of iptables until something calls the chain the
+function creates.
+
+A few words about the file naming convention
+============================================
+
+	The scripts in this directory will be run in sort order, which means
+that, like /etc/init.d/rc?.d, it works to start every file with two digits that
+indicate what order they run in.  There's a lot of numerical "space" between 30
+and 90 to allow for any local scripts that a particular machine might require.
+
+	I suggest that the files be named nn-(local|global)-<desc>, where
+<desc> is some kind of descriptive name.  There is nothing to enforce this
+system, but clearly labeling the files as local (specific to the server) or
+global (synchronized centrally) makes it clear which ones should be edited on
+the remote servers and which should not.
+
+	I have typically been using the files "40-local-chains" (sometimes) and
+"50-local-rules" (always) for machine-specific configuration.  40-local-chains
+defines chains to be called for that specific machine; this isn't usually
+necessary, so I don't use this one most of the time.  50-local-rules calls
+chains that aren't called in 30-global-rules (you can see above just what
+30-global-rules does), calls any chains there might be in 40-local-chains, if
+any, and contains other rules that aren't organized into chains because they're
+one-offs or too ad hoc to be made global.
+
+	The install scripts for GOC services typically use
+"60-local-service-rules" because they simply install an entire file rather than
+attempting to edit an existing one.  Likewise, some installations will have an
+"XX-local-servicename" file (where "XX" is actually a 2-digit number) that they
+insert into the order in some appropriate place so as not to have to edit
+50-local-rules.
+
+Some examples
+=============
+
+	I learn best by example, so I figure examples might help others who are
+reading this and trying to figure out what I did.
+
+	First of all, as you can see from the description of 30-global-rules
+above, the default will get you LAN access (if the server is hooked up to the
+LAN), will let you do outgoing connections just fine, will let the NOC and
+thomlee's Munin monitor the machine, and will let hosts on the "known_ok" list
+ssh in directly.  Because of lan_ok, people will be able to connect from jump.
+So these are all the things you DON'T have to do in your 50-local-rules file.
+
+	You might want to make sure to ". /etc/iptables.d/setup" in your
+50-local-rules file.  Not only does it contain useful shortcuts, it also sets
+$PATH to something secure and ensures that you are always calling iptables by
+its full path for more security.
+
+	If the machine is to be backed up using TSM, you should add tsm_ok.
+
+$ITFAI -j tsm_ok
+
+	Now then, if the machine is to be a web server (most are), you should
+add web_ok:
+
+$ITFAI -j web_ok
+
+	If the machine is to host a CEMon/BDII aggregator, there are three
+chains to call:
+
+$ITFAI -j cemon_ok
+$ITFAI -j bdii_ok
+$ITFAI -j bdii_intop_ok
+
+Warnings
+========
+
+	Here are a few things to watch out for.
+
+	The "known_ok" chain only works if someone keeps the list of known
+hosts current.
+
+Iptables Execution Order
+========================
+
+	Just for your reference, here is the order in which packets traverse
+the iptables built-in chains; this was tested on RHEL 5.5 with a 2.6.18 kernel
+on 2010/12/03:
+
+For locally-originated packets:
+
+* (routing decision)
+* raw/OUTPUT
+* mangle/OUTPUT
+* nat/OUTPUT
+* (bridging decision)
+* filter/OUTPUT
+* mangle/POSTROUTING
+* nat/POSTROUTING
+
+For locally-destined packets:
+
+* raw/PREROUTING
+* mangle/PREROUTING
+* nat/PREROUTING
+* mangle/INPUT
+* filter/INPUT
+
+For forwarded packets:
+
+* raw/PREROUTING
+* mangle/PREROUTING
+* nat/PREROUTING
+* (routing and bridging decisions)
+* mangle/FORWARD
+* filter/FORWARD
+* mangle/POSTROUTING
+* nat/POSTROUTING
+
+	Or here's a diagram, which is adapted from chapter 3 of
+http://www.netfilter.org/documentation/HOWTO/netfilter-hacking-HOWTO.html:
+
+[IN]--->PREROUTING-+->[ROUTE]--->FORWARD-+->POSTROUTING--->[OUT]
+         raw       |              mangle ^    mangle
+         mangle    |              filter |    nat
+         nat       |                     |
+                   v                   OUTPUT raw
+                 INPUT mangle            ^    mangle
+                   |   filter            |    nat
+                   |                  [ROUTE] filter
+                   |                     ^
+                   v                     |
+                [LOCAL]               [LOCAL]
+
+	To understand this diagram, note that locally-originated packets begin
+at [LOCAL] in the lower right and proceed upward, toward [OUT].
+Locally-destined packets begin at [IN] in the upper left, then after PREROUTING
+they turn downward toward INPUT and [LOCAL].  Forwarded packets begin at [IN]
+and proceed straight to the right to [OUT].
+
+	A note about OUTPUT and routing: Although the document this diagram is
+from puts OUTPUT before [ROUTE] for locally-originated packets, it is a bit
+vague: "routing occurs after this hook [OUTPUT] is called: in fact, the routing
+code is called first (to figure out the source IP address and some IP
+options)".  I believe this means that some portions of the routing code are
+called before OUTPUT, and the rest after.  Suffice it to say that routing in
+the case of locally-originated packets is not handled in precisely the same way
+as it is in the case of forwarded packets.  Also, the document was written in
+2002, and changes may have been made to the kernel since then.  Regardless, my
+experiments show that for locally-originated packets, the output interface
+appears immediately and is available to the OUTPUT chains of all tables, and in
+the case of bridging, the physical interface appears to the filter/OUTPUT chain
+(the last one called) and not to the previous OUTPUT chains.
+

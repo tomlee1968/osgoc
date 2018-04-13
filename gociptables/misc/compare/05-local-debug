@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2010/12/01
+# last modified 2010/12/02
+
+# This is for debugging -- logging packets before anything happens to them,
+# only on a temporary basis, so I can see what's going on behind the scenes.
+
+# This file is local to dubois.uits.indiana.edu and should contain only rules
+# specific to that server.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Local rules
+###############################################################################
+
+# This group of rules can be used to examine when the netfilter chains run,
+# although you'll probably want to specify only particular source and
+# destination IPs so you don't end up logging every single packet that goes
+# through the server, and multiple times at that.
+
+#IP1=192.168.97.26
+#IP2=192.168.99.14
+
+#$ITFAI -s $IP1/32 -j LOG --log-prefix "iptables_fi: "
+#$ITFAO -d $IP2/32 -j LOG --log-prefix "iptables_fo: "
+#$ITFAF -s $IP1/32 -d $IP2/32 -j LOG --log-prefix "iptables_ff: "
+#$ITNAPRE -s $IP1/32 -j LOG --log-prefix "iptables_npre: "
+#$ITNAPOST -d $IP2/32 -j LOG --log-prefix "iptables_npost: "
+#$ITNAO -d $IP2/32 -j LOG --log-prefix "iptables_no: "
+#$ITMAPRE -s $IP1/32 -j LOG --log-prefix "iptables_mpre: "
+#$ITMAO -d $IP2/32 -j LOG --log-prefix "iptables_mo: "
+#$ITMAI -s $IP1/32 -j LOG --log-prefix "iptables_mi: "
+#$ITMAF -s $IP1/32 -d $IP2/32 -j LOG --log-prefix "iptables_mf: "
+#$ITMAPOST -d $IP2/32 -j LOG --log-prefix "iptables_mpost: "
+#$ITRAPRE -s $IP1/32 -j LOG --log-prefix "iptables_rpre: "
+#$ITRAO -d $IP2/32 -j LOG --log-prefix "iptables_ro: "
+
+# This tells me what servers are addressing dubois by the wrong IP address.
+
+#$ITNAPRE -d 192.168.1.1/32 -j LOG --log-prefix "iptables_old_ip: "
+
+# These rules will tell me if anybody is using the wrong LAN IP for anything
+# (as long as it's coming through this server).  They might be addressing this
+# server via the old IP address, or something here might be addressing another
+# server by the old IP address, or some server might be addressing some other
+# server by the old IP address.
+
+#$ITFAI -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITFAI -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITFAF -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITFAF -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITFAO -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITFAO -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+
+#$ITNAPRE -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITNAPRE -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITNAO -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITNAO -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITNAPOST -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITNAPOST -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAPRE -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAPRE -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAI -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAI -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAF -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAF -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAO -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAO -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAPOST -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITMAPOST -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITRAPRE -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITRAPRE -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITRAO -s 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+#$ITRAO -d 192.168.1.0/24 -j LOG --log-prefix "iptables_old_ip: "
+
+# These tell me what packets are coming in which interface.
+
+#$ITNAPRE -m physdev --physdev-in tap0 -j LOG --log-prefix "iptables_in_tap0: "
+#$ITNAPRE -m physdev --physdev-in eth1 -j LOG --log-prefix "iptables_in_eth1: "
+
+# These tell me whether any packets are coming in the wrong interface.
+
+#$ITFAI -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_ii_eth1: "
+#$ITFAF -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fi_eth1: "
+#$ITNAPRE -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_pi_eth1: "
+#$ITFAI -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_ii_tap0: "
+#$ITFAF -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fi_tap0: "
+#$ITNAPRE -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_pi_tap0: "
+
+# These tell me whether any packets are going out the wrong interface.
+
+#$ITFAO -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_oo_eth1: "
+#$ITFAF -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fo_eth1: "
+#$ITNAPOST -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_po_eth1: "
+#$ITFAO -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_oo_tap0: "
+#$ITFAF -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fo_tap0: "
+#$ITNAPOST -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_po_tap0: "
+
+# These tell me what packets are going out the bridge.
+
+#$ITFAO -o br0 -j LOG --log-prefix "iptables_o_br0: "
+#$ITFAF -o br0 -j LOG --log-prefix "iptables_f_br0: "
+#$ITNAPOST -o br0 -j LOG --log-prefix "iptables_p_br0: "

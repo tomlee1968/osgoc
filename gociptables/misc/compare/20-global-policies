@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2008/04/09
+# last modified 2013/10/03
+
+# This file will be synchronized using puppet across all servers and should
+# therefore contain only rules that should apply to all GOC servers.
+
+# This file should only set firewall policies; it should not define any
+# subchains or add any rules to any chains.  See /etc/iptables.d/README for
+# more information.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Set policies
+###############################################################################
+
+$ITF -P INPUT REJECT
+$ITF -P OUTPUT ACCEPT
+$ITF -P FORWARD REJECT
+
+###############################################################################
+# Extremely basic rules
+###############################################################################
+
+# Accept incoming packets on established connections and related ones.
+$ITFAI -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Always accept packets from the loopback interface.
+$ITFAI -i lo -j ACCEPT
+

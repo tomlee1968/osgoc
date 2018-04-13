@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2008/07/30
+# last modified 2011/05/04
+
+# This is a local script defining local chains.  No chains should be called in
+# this file!
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Subchains
+###############################################################################
+
+$ITF -N imap_ok
+$ITF -A imap_ok -p tcp --dport imap -j ACCEPT
+$ITF -A imap_ok -p udp --dport imap -j ACCEPT
+$ITF -A imap_ok -p tcp --dport imap3 -j ACCEPT
+$ITF -A imap_ok -p udp --dport imap3 -j ACCEPT
+$ITF -A imap_ok -p tcp --dport imaps -j ACCEPT
+$ITF -A imap_ok -p udp --dport imaps -j ACCEPT
+$ITF -A imap_ok -p tcp --dport imap4-ssl -j ACCEPT
+$ITF -A imap_ok -p udp --dport imap4-ssl -j ACCEPT
+$ITF -A imap_ok -p udp --dport fud -j ACCEPT
+$ITF -A imap_ok -p tcp --dport 2005 -j ACCEPT
+$ITF -A imap_ok -p udp --dport 2005 -j ACCEPT
+$ITF -A imap_ok -j RETURN
+
+$ITF -N imap_known_ok
+$ITF -A imap_known_ok -p tcp --dport imap -j known_ok
+$ITF -A imap_known_ok -p udp --dport imap -j known_ok
+$ITF -A imap_known_ok -p tcp --dport imap3 -j known_ok
+$ITF -A imap_known_ok -p udp --dport imap3 -j known_ok
+$ITF -A imap_known_ok -p tcp --dport imaps -j known_ok
+$ITF -A imap_known_ok -p udp --dport imaps -j known_ok
+$ITF -A imap_known_ok -p tcp --dport imap4-ssl -j known_ok
+$ITF -A imap_known_ok -p udp --dport imap4-ssl -j known_ok
+$ITF -A imap_known_ok -p udp --dport fud -j known_ok
+$ITF -A imap_known_ok -p tcp --dport 2005 -j known_ok
+$ITF -A imap_known_ok -p udp --dport 2005 -j known_ok
+$ITF -A imap_known_ok -j RETURN
+
+$ITF -N iu_mail_ok
+$ITF -A iu_mail_ok -s 129.79.1.97/32 -j ACCEPT
+$ITF -A iu_mail_ok -s 129.79.1.188/32 -j ACCEPT
+$ITF -A iu_mail_ok -s 129.79.1.194/32 -j ACCEPT
+$ITF -A iu_mail_ok -s 129.79.14.128/25 -j ACCEPT
+$ITF -A iu_mail_ok -s 134.68.22.128/26 -j ACCEPT
+$ITF -A iu_mail_ok -j RETURN
+
+$ITF -N gmail_ok
+$ITF -A gmail_ok -j RETURN
+
+$ITF -N postfix_ok
+$ITF -A postfix_ok -p tcp --dport smtp -j iu_mail_ok
+$ITF -A postfix_ok -p udp --dport smtp -j iu_mail_ok
+$ITF -A postfix_ok -p tcp --dport smtps -j iu_mail_ok
+$ITF -A postfix_ok -p tcp --dport smtp -j gmail_ok
+$ITF -A postfix_ok -p udp --dport smtp -j gmail_ok
+$ITF -A postfix_ok -p tcp --dport smtps -j gmail_ok
+$ITF -A postfix_ok -j RETURN
+

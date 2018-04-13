@@ -1,0 +1,324 @@
+#!/bin/bash
+#
+# iptables	Set up iptables (v4 & v6) firewalls from /etc/iptables.d
+#
+# chkconfig: 2345 08 92
+# description: Starts and stops IPv4 and IPv6 firewall based on /etc/iptables.d
+#
+# config: /etc/iptables.d
+#
+### BEGIN INIT INFO
+# Provides: iptables
+# Required-Start:
+# Required-Stop:
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: Start and stop IPv4/6 firewalls
+# Description: Starts and stops IPv4 and IPv6 firewall based on /etc/iptables.d
+### END INIT INFO
+
+# Source function library.
+. /etc/init.d/functions
+
+IPT=ip6tables
+IPT4=iptables
+IPT_DIR=/etc/iptables.d
+PROC_IPT_NAMES=/proc/net/ip6_tables_names
+PROC_IPT4_NAMES=/proc/net/ip_tables_names
+LOCKFILE=/var/lock/subsys/gociptables
+
+# Root only
+[ $EUID = 0 ] || exit 4
+
+if [[ ! -x /sbin/$IPT ]] && [[ ! -x /sbin/$IPT4 ]]; then
+    echo -n $"Neither /sbin/$IPT nor /sbin/$IPT4 exists."; warning; echo
+    exit 5
+fi
+
+if lsmod 2>/dev/null | grep -q ipchains; then
+    echo -n $"ipchains and $IPT cannot be used together."; warning; echo
+    exit 6
+fi
+
+if [[ ! -d /lib/modules/$(uname -r) ]]; then
+    echo -n $"Running kernel's modules not installed (are you installing a distro?)."; warning; echo
+    exit 7
+fi
+
+# Old or new modutils
+if /sbin/modprobe --version 2>&1 | grep -q module-init-tools; then
+    NEW_MODUTILS=1
+else
+    NEW_MODUTILS=0
+fi
+
+# Configuration
+IPT_SYSCTL_LOAD_LIST=""
+
+function load_sysctl() {
+    # Load sysctl settings
+    if [ -n "$IPT_SYSCTL_LOAD_LIST" ]; then
+	echo -n $"Loading sysctl settings: "
+	ret=0
+	for item in $IPT_SYSCTL_LOAD_LIST; do
+	    fgrep $item /etc/sysctl.conf | sysctl -p - >/dev/null
+	    let ret+=$?;
+	done
+	[ $ret -eq 0 ] && success || failure
+	echo
+    fi
+    return $ret
+}
+
+function rmmod_r() {
+    # Unload module with all referring modules.
+    # At first all referring modules will be unloaded, then the module itself.
+    local mod=$1
+    local ret=0
+    local ref=
+
+    # Get referring modules.
+    # New modutils have another output format.
+    if [[ $NEW_MODUTILS = 1 ]]; then
+	ref=$(lsmod | awk "/^${mod}/ { print \$4; }" | tr ',' ' ')
+    else
+	ref=$(lsmod | grep ^${mod} | cut -d "[" -s -f 2 | cut -d "]" -s -f 1)
+    fi
+
+    # recursive call for all referring modules
+    for i in $ref; do
+	rmmod_r $i
+	let ret+=$?;
+    done
+
+    # Unload module.
+    # The extra test is for 2.6: The module might have autocleaned,
+    # after all referring modules are unloaded.
+    if grep -q "^${mod}" /proc/modules ; then
+	modprobe -r $mod > /dev/null 2>&1
+	let ret+=$?;
+    fi
+
+    return $ret
+}
+
+function clear_all() {
+    # Clear all rules from all chains in all tables, delete all user-defined
+    # chains, and set all policies to ACCEPT.
+
+    local tables table chains chain
+    local ret=0
+
+    # If the modules aren't loaded, do nothing.
+    if [[ ! -e $PROC_IPT4_NAMES ]] && [[ ! -e $PROC_IPT_NAMES ]]; then
+	return 1
+    fi
+
+    # IPv6
+    if [[ -e $PROC_IPT_NAMES ]]; then
+	# Get the list of tables
+	tables=$(cat $PROC_IPT_NAMES 2>/dev/null)
+	# If there aren't any, do nothing.
+	if [[ -z $tables ]]; then
+	    return 1
+	fi
+
+	# Clear all tables.
+	for table in $tables; do
+	    # Flush all rules.
+	    $IPT -t $table -F
+	    # Delete all user-defined chains.
+	    $IPT -t $table -X
+	    # Set all default chains' policies -- different tables have different
+	    # default chains, though.
+	    case "$table" in
+		filter)
+		    chains="INPUT OUTPUT FORWARD"
+		    ;;
+		mangle)
+		    chains="PREROUTING INPUT FORWARD OUTPUT POSTROUTING"
+		    ;;
+		raw)
+		    chains="PREROUTING OUTPUT"
+		    ;;
+	    esac
+	    for chain in $chains; do
+		$IPT -t $table -P $chain ACCEPT
+		let ret+=$?
+	    done
+	done
+    fi
+
+    # IPv4
+    if [[ -e $PROC_IPT4_NAMES ]]; then
+	# Get the list of tables
+	tables=$(cat $PROC_IPT4_NAMES 2>/dev/null)
+	# If there aren't any, do nothing.
+	if [[ -z $tables ]]; then
+	    return 1
+	fi
+
+	# Clear all tables.
+	for table in $tables; do
+	    # Flush all rules.
+	    $IPT4 -t $table -F
+	    # Delete all user-defined chains.
+	    $IPT4 -t $table -X
+	    # Set all default chains' policies -- different tables have different
+	    # default chains, though.
+	    case "$table" in
+		filter)
+		    chains="INPUT OUTPUT FORWARD"
+		    ;;
+		nat)
+		    chains="PREROUTING OUTPUT POSTROUTING"
+		    ;;
+		mangle)
+		    chains="PREROUTING INPUT FORWARD OUTPUT POSTROUTING"
+		    ;;
+		raw)
+		    chains="PREROUTING OUTPUT"
+		    ;;
+	    esac
+	    for chain in $chains; do
+		$IPT4 -t $table -P $chain ACCEPT
+		let ret+=$?
+	    done
+	done
+    fi
+
+    return $ret
+}
+
+function start() {
+    local ret=0
+
+    echo -n $"Applying /etc/iptables.d firewall rules: "
+    pushd /etc/iptables.d >/dev/null
+    /bin/rm -f *~ #*# .*# .*.sw?
+    chmod -f a-x *.rpmsave *.rpmnew
+    for i in ./[0-9]*; do
+	if [ -x $i ]; then
+	    $i
+	    if [[ $? -ne 0 ]]; then
+		ret=$?
+	    fi
+	fi
+    done
+    popd >/dev/null
+    if [[ $ret -eq 0 ]]; then
+	success
+	touch $LOCKFILE
+    else
+	failure
+    fi
+    echo
+    load_sysctl
+    return $ret
+}
+
+function stop() {
+    local ret=0
+
+    # If iptables/ip6tables modules aren't loaded, do nothing.
+    if [[ ! -e $PROC_IPT_NAMES ]] && [[ ! -e $PROC_IPT4_TABLES ]]; then
+	return 1
+    fi
+
+    # Clear rules and policies.
+    clear_all
+
+    # Unload modules.
+    echo -n $"Unloading iptables modules: "
+    local ipv mod
+    for ipv in ip ip6; do
+	for mod in ${ipv}_tables ${ipv}_conntrack ${ipv}t_LOG ${ipv}t_REJECT; do
+	    rmmod_r $mod
+	    let ret+=$?
+	done
+    done
+    # Modules common to both v6 and v4 netfilter
+    for mod in x_tables nf_nat nf_conntrack; do
+	rmmod_r $mod
+	let ret+=$?
+    done
+    if [[ $ret -eq 0 ]]; then
+	success
+    else
+	failure
+    fi
+    echo
+    rm -f $LOCKFILE
+    return $ret
+}
+
+function status() {
+    # If the lockfile ($LOCKFILE) exists and the lists of tables
+    # ($PROC_IPT_NAMES, $PROC_IPT4_NAMES) exist, everything is fine.  But
+    # without one or the other, things are weird.
+
+    # If the lockfile is missing, the list of tables can still exist (something
+    # other than this script loaded the modules and set up some
+    # rules/policies).  That's an error as far as this script is concerned, but
+    # we can still print the tables.  However, if the list of tables is empty
+    # or nonexistent, that means there's something wrong, the simplest
+    # something being that the modules just aren't loaded.  There won't be
+    # anything to print.
+
+    local table tables tables4
+    tables=$(cat $PROC_IPT_NAMES 2>/dev/null)
+    tables4=$(cat $PROC_IPT4_NAMES 2>/dev/null)
+
+    if [[ ! -e $PROC_IPT_NAMES ]] && [[ ! -e $PROC_IPT4_NAMES ]]; then
+	echo $"Neither $PROC_IPT_NAMES nor $PROC_IPT4_NAMES exists -- iptables modules not loaded."
+	return 1
+    fi
+    if [[ -z $tables ]] && [[ -z $tables4 ]]; then
+	echo $"$PROC_IPT_NAMES and $PROC_IPT4_NAMES are empty -- firewall not configured."
+	return 1
+    fi
+    if [[ ! -f $LOCKFILE ]]; then
+	echo $"Firewall is configured but there is no lockfile."
+    fi
+
+    # Print the contents of the tables.
+    for table in $tables; do
+	$IPT -t $table -nvL
+    done
+    for table in $tables4; do
+	$IPT4 -t $table -nvL
+    done
+    return 0
+}
+
+case "$1" in
+    start)
+	start
+	RETVAL=$?
+	;;
+    stop)
+	stop
+	RETVAL=$?
+	;;
+    reload|restart)
+	stop
+	start
+	RETVAL=$?
+	;;
+    condrestart)
+	if [[ -e $LOCKFILE ]]; then
+	    stop
+	    start
+	    RETVAL=$?
+	fi
+	;;
+    status)
+	status
+	RETVAL=$?
+	;;
+    *)
+	echo $"Usage: $0 {start|stop|restart|condrestart|status}"
+	exit 1
+	;;
+esac
+exit $RETVAL

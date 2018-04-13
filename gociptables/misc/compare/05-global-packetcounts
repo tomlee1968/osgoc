@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2012/10/04
+# last modified 2012/10/04
+
+# This file will be synchronized using puppet across all servers and should
+# therefore contain only rules that should apply to all GOC servers.
+
+# This file only exists to set up iptables to be compatible with
+# packet-counting system monitors.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Rules
+###############################################################################
+
+# Rules that don't really do anything but notice packets so that packet-count
+# monitors (like Munin's) can monitor network traffic
+
+if [[ $IP4_ETH0 ]]; then
+    $ITFAI -d $IP4_ETH0
+    $ITFAO -s $IP4_ETH0
+fi
+if [[ $IP4_ETH1 ]]; then
+    $ITFAI -d $IP4_ETH1
+    $ITFAO -s $IP4_ETH1
+fi
+if [[ $IP4_EM1 ]]; then
+    $ITFAI -d $IP4_EM1
+    $ITFAO -s $IP4_EM1
+fi
+if [[ $IP4_EM2 ]]; then
+    $ITFAI -d $IP4_EM2
+    $ITFAO -s $IP4_EM2
+fi
+if [[ $IP4_TAP0 ]]; then
+    $ITFAI -d $IP4_TAP0
+    $ITFAO -s $IP4_TAP0
+fi
+if [[ $IP4_BOND0 ]]; then
+    $ITFAI -d $IP4_BOND0
+    $ITFAO -s $IP4_BOND0
+fi
+

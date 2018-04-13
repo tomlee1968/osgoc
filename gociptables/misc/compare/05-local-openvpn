@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun on 2008/09/18
+# last modified 2013/07/12
+
+# This file contains iptables changes necessary for the operation of an OpenVPN
+# server and would be useless or detrimental in other cases.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Rules pertaining to OpenVPN
+###############################################################################
+
+# Reject locally-destined packets coming in the wrong physical interface
+#$ITFAI -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j REJECT --reject-with icmp-net-prohibited
+#$ITFAI -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j REJECT --reject-with icmp-net-prohibited
+
+# Reject locally-originated packets going out the wrong physical interface
+#$ITFAO -m physdev --physdev-out eth1 -s ! 192.168.96.0/23 -j REJECT --reject-with icmp-net-prohibited
+#$ITFAO -m physdev --physdev-out tap0 -s ! 192.168.98.0/23 -j REJECT --reject-with icmp-net-prohibited
+
+# Reject forwarded packets coming in or going out the wrong physical interface
+#$ITFAF -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j REJECT --reject-with icmp-net-prohibited
+#$ITFAF -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j REJECT --reject-with icmp-net-prohibited
+#$ITFAF -m physdev --physdev-out eth1 -s ! 192.168.96.0/23 -j REJECT --reject-with icmp-net-prohibited
+#$ITFAF -m physdev --physdev-out tap0 -s ! 192.168.98.0/23 -j REJECT --reject-with icmp-net-prohibited
+
+#$ITFAI -i br0 -j ACCEPT
+#$ITFAF -i br0 -j ACCEPT
+#$ITFAF -o br0 -j ACCEPT
+
+# Might be overkill, but accept forwarded packets from LAN to LAN
+#$ITF -A FORWARD -s 192.168.0.0/16 -d 192.168.0.0/16 -j ACCEPT
+
+# These tell me whether any packets are coming in the wrong interface.
+
+#$ITFAI -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fil_inp_in_eth1: "
+#$ITFAF -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fil_for_in_eth1: "
+#$ITNAPRE -m physdev --physdev-in eth1 -s ! 192.168.96.0/23 -j LOG --log-prefix "iptables_nat_pre_in_eth1: "
+#$ITFAI -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fil_inp_in_tap0: "
+#$ITFAF -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fil_for_in_tap0: "
+#$ITNAPRE -m physdev --physdev-in tap0 -s ! 192.168.98.0/23 -j LOG --log-prefix "iptables_nat_pre_in_tap0: "
+
+# These tell me whether any packets are going out the wrong interface.
+
+#$ITFAO -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fil_out_out_eth1: "
+#$ITFAF -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_fil_for_out_eth1: "
+#$ITNAPOST -m physdev --physdev-out eth1 -d ! 192.168.96.0/23 -j LOG --log-prefix "iptables_nat_pos_out_eth1: "
+#$ITFAO -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fil_out_out_tap0: "
+#$ITFAF -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_fil_for_out_tap0: "
+#$ITNAPOST -m physdev --physdev-out tap0 -d ! 192.168.98.0/23 -j LOG --log-prefix "iptables_nat_pos_out_tap0: "

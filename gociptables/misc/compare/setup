@@ -1,0 +1,174 @@
+# (no "shebang" line because this is meant to be sourced by other scripts)
+# Setup -- shortcuts, etc. for iptables scripts
+# By Thomas Lee <thomlee@indiana.edu>
+# Begun 2010/12/06
+# Last modified 2012/10/04
+
+# All the iptables scripts use some subset of these definitions, so I thought
+# I'd make them all available in a single place so the other scripts can just
+# source this file, instead of having to repeatedly define them every time.
+
+###############################################################################
+# Set the path, for security
+###############################################################################
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/opt/sbin:/opt/bin
+
+###############################################################################
+# Shortcuts
+###############################################################################
+
+# For even more security, specify location of iptables command
+IPTABLES=/sbin/iptables
+
+# Now we have shortcuts for the four tables: $ITF for "iptables -t filter",
+# $ITN for "iptables -t nat", etc.
+
+# By far the most frequently-used operation is -A (append a rule to a chain),
+# so I've included shortcuts for appending to each table's built-in chains. 
+
+# Shortcuts for filter table, which has only INPUT, OUTPUT and FORWARD chains
+ITF="$IPTABLES -t filter"
+ITFAI="$ITF -A INPUT"
+ITFAO="$ITF -A OUTPUT"
+ITFAF="$ITF -A FORWARD"
+
+# Shortcuts for NAT table, which has only PREROUTING, POSTROUTING, and OUTPUT
+# chains
+ITN="$IPTABLES -t nat"
+ITNAPRE="$ITN -A PREROUTING"
+ITNAPOST="$ITN -A POSTROUTING"
+ITNAO="$ITN -A OUTPUT"
+
+# Shortcuts for mangle table, which has all five chains
+ITM="$IPTABLES -t mangle"
+ITMAPRE="$ITM -A PREROUTING"
+ITMAO="$ITM -A OUTPUT"
+ITMAI="$ITM -A INPUT"
+ITMAF="$ITM -A FORWARD"
+ITMAPOST="$ITM -A POSTROUTING"
+
+# Shortcuts for raw table, which has only PREROUTING and OUTPUT chains
+ITR="$IPTABLES -t raw"
+ITRAPRE="$ITR -A PREROUTING"
+ITRAO="$ITR -A OUTPUT"
+
+# Read quickdata
+if [[ -e /etc/iptables.d/quickdata ]]; then
+    . /etc/iptables.d/quickdata
+fi
+
+###############################################################################
+# Functions
+###############################################################################
+
+subchain() {
+
+    # Make a filter table subchain with the given name that accepts packets
+    # from the given source specifier.  A frequently-required task.  Example:
+    # subchain example_ok 123.45.67.89/32
+    # ...
+    # $ITF -p tcp --dport $PORT -j example_ok
+
+    local name=$1 ipspec=$2
+
+    $ITF -N $name
+    $ITF -A $name -s $ipspec -j ACCEPT
+    $ITF -A $name -j RETURN
+}
+
+ip4addr() {
+
+    # Given an interface, look up the IPv4 address on that interface and print
+    # it, or print nothing if that interface doesn't exist.  Example:
+    # ip4addr eth0
+    # 129.79.53.53
+
+    local if=$1
+
+    ip addr show $if 2>/dev/null | sed -r -e '/inet /!d' -e '/secondary/d' -e 's/^.*inet ([[:digit:]]+(\.[[:digit:]]+){3}).*$/\1/' | head -n 1
+}
+
+ip6addr() {
+
+    # Given an interface, look up the IPv6 address on that interface and print
+    # it, or print nothing if that interface doesn't exist.  Example:
+    # ip6addr eth0
+    # fe80::62eb:69ff:fefe:c1
+
+    local if=$1
+
+    ip addr show $if 2>/dev/null | sed -r -e '/inet6 /!d' -e 's/^.*inet6 ([[:xdigit:]]*(:[[:xdigit:]]*){0,7}).*$/\1/' | head -n 1
+}
+
+getip() {
+
+    # Given a hostname, looks up its IP in DNS and prints it.
+
+    local hostname=$1
+
+    dig +short $hostname
+}
+
+iam() {
+
+    # See if we are a given hostname by comparing IPv4 addresses.  Return 0 if
+    # so, 1 if not.
+
+    local hostname=$1 ip
+
+    ip=`getip $hostname`
+    if [[ $ip == $IP4_VLAN259 ]]; then return 0; fi
+    if [[ $ip == $IP4_VLAN4020 ]]; then return 0; fi
+    if [[ $ip == $IP4_ETH0 ]]; then return 0; fi
+    if [[ $ip == $IP4_ETH1 ]]; then return 0; fi
+    if [[ $ip == $IP4_EM1 ]]; then return 0; fi
+    if [[ $ip == $IP4_EM2 ]]; then return 0; fi
+    if [[ $ip == $IP4_TAP0 ]]; then return 0; fi
+    if [[ $ip == $IP4_BOND0 ]]; then return 0; fi
+    return 1
+}
+
+write_quickdata() {
+
+    # Write the quickdata file.  Keep in mind that, if the iptables script
+    # sequence is executing at boot time, the network hardware isn't yet
+    # initialized, so asking the kernel for IP addresses via ifconfig or ip
+    # won't work.  If this is the case, don't rewrite quickdata; use the last
+    # available data.
+
+    # For some reason, RHEL6 sometimes assigns Ethernet adapters the names em1
+    # and em2, rather than eth0 and eth1.
+
+    if [[ `ifconfig | wc -l` -gt 1 ]]; then
+	cat <<EOF > /etc/iptables.d/quickdata
+#!/bin/bash
+
+# /etc/iptables.d/quickdata
+
+# Written at start of /etc/iptables.d run for quick access
+
+# Old-style or CNDN network interfaces?
+IF_VLAN259=`for i in eth0 em1; do if ip link show $i >&/dev/null; then echo $i; fi; done`
+IF_VLAN4020=`for i in eth1 em2; do if ip link show $i >&/dev/null; then echo $i; fi; done`
+
+# IP addresses for interfaces
+IP4_VLAN259=`ip4addr $IF_VLAN259`
+IP4_VLAN4020=`ip4addr $IF_VLAN4020`
+IP4_ETH0=`ip4addr eth0`
+IP4_ETH1=`ip4addr eth1`
+IP4_EM1=`ip4addr em1`
+IP4_EM2=`ip4addr em2`
+IP4_TAP0=`ip4addr tap0`
+IP4_BOND0=`ip4addr bond0`
+IP6_ETH0=`ip6addr eth0`
+IP6_ETH1=`ip6addr eth1`
+IP6_EM1=`ip6addr em1`
+IP6_EM2=`ip6addr em2`
+IP6_TAP0=`ip6addr tap0`
+IP6_BOND0=`ip6addr bond0`
+
+EOF
+    fi
+    . /etc/iptables.d/quickdata
+}

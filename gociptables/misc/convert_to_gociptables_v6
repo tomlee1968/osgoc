@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# convert_to_gociptables_v6
+
+# Comes with gociptables 1.6+
+
+# Looks in /etc/iptables.d for scripts that
+# 1. Aren't global
+# 2. Are iptables scripts
+# 3. Haven't been converted for the IPv6 gociptables in 1.6+
+
+function convert() {
+    local file=$1
+    if [ ! -r "$file" ]; then
+	echo "Unable to read $file" >/dev/stderr
+    fi
+
+    echo "File $file:" >/dev/stderr
+
+    # The basic procedure is to look for any $ITFAI type variables and add a
+    # duplicate line with the corresponding $ITFAI4 type variable.  Slightly
+    # complicating this is the lack of the $ITNA* variables in IPv6, which
+    # means that those don't get duplicated; they're just changed to 4s.
+
+    # The advanced procedure deals with defined subchains ... they will look
+    # like this:
+
+    # $ITF -N foo
+    # $ITF -A foo blah blah blah
+    # $ITF -A foo blah blah other blah
+    # $ITF -A foo -j RETURN
+
+    # ... or in other words, an '$ITF -N foo' line followed by any number of
+    # '$ITF -A foo' lines.  The thing to do is that if it's an $ITN (very rare,
+    # and I doubt there are any occurrences of this anywhere), replace $ITN
+    # with $ITN4. Otherwise ($ITF, $ITM, $ITR), duplicate the lines, then
+    # produce a version with $ITF replaced with $ITF4, etc.
+    perl -n -e '
+BEGIN {
+  @a=();
+  $cmd=undef;
+  $chain=undef;
+}
+if((defined $cmd) && (defined $chain) && /^\s*\Q$cmd\E\s+-A\s+\Q$chain\E\s/) {
+  push @a, $_;
+} else {
+  print @a unless($cmd eq "\$ITN");
+  foreach (@a) {
+    s/(\$IT[FMNR])(?!4)/${1}4/;
+  }
+  print @a;
+  @a=();
+  $cmd=undef;
+  $chain=undef;
+  if(/^\s*\$IT[FMNR]A(F|I|O|POST|PRE)(?!4)/) {
+    unless(/^\s*\$ITNA/) {
+      print;
+    }
+    s/(\$IT[FMNR]A(F|I|O|POST|PRE))(?!4)/${1}4/;
+    print;
+  } elsif(/^\s*\$IT[FMNR]\s+-N\s+\S+\s*$/) {
+    ($cmd, $chain) = /^\s*(\$IT[FMNR])\s+-N\s+(\S+)\s*$/;
+    push @a, $_;
+  } else {
+    print;
+  }
+}
+END {
+  print @a if(@a);
+}
+' $file
+}
+
+if [ ! -e /etc/iptables.d ]; then
+   echo "/etc/iptables.d does not exist" >/dev/stderr
+   exit 1
+fi
+if [ ! -d /etc/iptables.d ]; then
+   echo "/etc/iptables.d not a directory" >/dev/stderr
+   exit 0
+fi
+if [ ! -x /etc/iptables.d ]; then
+   echo "Insufficient permissions for /etc/iptables.d " >/dev/stderr
+   exit 0
+fi
+
+pushd /etc/iptables.d >&/dev/null
+for scriptfile in [0-9][0-9]*; do
+    # Skip global files
+    if [ "${scriptfile/global}" != "$scriptfile" ]; then
+	echo "$scriptfile is global -- skipping" >/dev/stderr
+	continue
+    fi
+    # Skip files that aren't executable
+    if [ ! -x "$scriptfile" ]; then
+	echo "$scriptfile not executable -- skipping" >/dev/stderr
+	continue
+    fi
+    # How to tell whether the file has been converted?
+
+    # Well, if it uses $ITFAI or the like, but has no $ITFAI4 equivalent, which
+    # this script would have added if it had been run on it before, then it
+    # hasn't been.
+
+    # This skips files that don't have any of those $ITFAI sorts of vars, or
+    # files that do have them but also have at least one $ITFAI4 type var.
+    # This will probably get 95% of cases.
+    if ! grep -Eq '\$IT[FMR]A(F|I|O|POST|PRE)' $scriptfile; then
+	echo "$scriptfile contains no \$ITFAI-type vars -- skipping" >/dev/stderr
+	continue
+    fi
+    if grep -Eq '\$IT[FMNR]A(F|I|O|POST|PRE)4' $scriptfile; then
+	echo "$scriptfile already contains \$ITFAI4-type vars -- skipping" >/dev/stderr
+	continue
+    fi
+
+    convert $scriptfile
+done
+popd >&/dev/null

@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# /etc/iptables.d/quickdata
+
+# Written at start of /etc/iptables.d run for quick access
+
+# Old-style or CNDN network interfaces?
+IF_VLAN259=eth0
+IF_VLAN4020=eth1
+
+# IP addresses for interfaces
+IP4_VLAN259=129.79.53.6
+IP4_VLAN4020=192.168.96.1
+IP4_ETH0=129.79.53.6
+IP4_ETH1=192.168.96.1
+IP4_EM1=
+IP4_EM2=
+IP4_TAP0=
+IP4_BOND0=
+IP6_ETH0=fe80::222:19ff:fe00:b2b5
+IP6_ETH1=fe80::222:19ff:fe00:b2b7
+IP6_EM1=
+IP6_EM2=
+IP6_TAP0=
+IP6_BOND0=
+

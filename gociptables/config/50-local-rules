@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# Some sample local firewall rules
+# By Tom Lee <thomlee@indiana.edu>
+
+# This file varies from one server to another, but if it is not present,
+# puppet will copy this file into place as an initial starting point.
+
+# These things are automatically done by earlier scripts:
+
+#* All loopback packets are allowed.
+#* All ICMP packets are allowed.
+#* All private VLAN packets are allowed, on machines that are on the private
+#  VLAN (except when those packets come from "suspect" hosts, which are ones
+#  that allow shell access to people not GOC employees -- those hosts' packets
+#  must pass the same tests as packets from the Internet).
+#* All packets coming in on established or related connections are allowed.
+#* SSH from the GRNOC's Nagios monitor is allowed.
+#* SSH connections from workstations on the known whitelist are allowed.
+
+# Nothing in the above list needs to be done here.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+# The setup file contains definitions for useful variables and functions.  For
+# example, $ITFAI stands for the frequently-used command
+#
+# '/sbin/ip6tables -t filter -A INPUT'
+#
+# while $ITFAI4 stands for its IPv4 equivalent.  There are many other variables
+# for abbreviating these commands.  Please see the setup file for the rest.  It
+# is far better to use these variables than to use the iptables/ip6tables
+# commands yourself or to create your own variables, because the setup file is
+# maintained by Puppet, so any global changes that need to be made will benefit
+# from a consistent approach.
+
+. /etc/iptables.d/setup
+
+###############################################################################
+# Rules
+###############################################################################
+
+# Uncomment these if you want these services.  Note that there is both an IPv6
+# and an IPv4 rule for each, because the IPv4 and IPv6 firewalls are separate.
+
+# http and https (TCP ports 80 and 443):
+#$ITFAI -j web_ok
+#$ITFAI4 -j web_ok
+
+# Alternate http and https (TCP ports 8080 and 8443):
+#$ITFAI -j alt_web_ok
+#$ITFAI4 -j alt_web_ok
+
+# CEMon (TCP port 14001):
+#$ITFAI -j cemon_ok
+#$ITFAI4 -j cemon_ok
+
+# BDII (TCP ports 2170:2172):
+#$ITFAI -j bdii_ok
+#$ITFAI4 -j bdii_ok
+
+# Interoperability BDII (TCP ports 2180:2182):
+#$ITFAI -j bdii_intop_ok
+#$ITFAI4 -j bdii_intop_ok
+
+# Temporary Globus work (TCP ports 40000:44999):
+#$ITFAI -j globus_temp_ok
+#$ITFAI4 -j globus_temp_ok
+
+# TSM Backup (TCP ports 1581, 2123:2124):
+#$ITFAI -j tsm_ok
+#$ITFAI4 -j tsm_ok
+
+# VMWare Server Console (TCP port 904, known hosts only):
+#$ITFAI -j vmware_known_ok
+#$ITFAI4 -j vmware_known_ok

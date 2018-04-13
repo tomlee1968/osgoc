@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# Tom Lee <thomlee@indiana.edu>
+# begun 2008/04/02
+# last modified 2012/10/05
+
+# Script to totally nuke the iptables in preparation for rewriting.  This
+# script is synchronized using puppet across all servers.  See
+# /etc/iptables.d/README for more information.
+
+###############################################################################
+# Preparation
+###############################################################################
+
+. /etc/iptables.d/setup
+
+# Write the quickdata file (this function is in /etc/iptables.d/setup)
+write_quickdata
+
+###############################################################################
+# Clear iptables
+###############################################################################
+
+# Flush all rules from all chains in all tables
+
+$ITF -F
+$ITN -F
+$ITM -F
+$ITR -F
+
+# Delete all user-defined chains
+
+$ITF -X
+$ITN -X
+$ITM -X
+$ITR -X
+
+# Set the default policies for the filter table's default chains
+
+$ITF -P INPUT ACCEPT
+$ITF -P OUTPUT ACCEPT
+$ITF -P FORWARD ACCEPT
+
+# For completeness, do the same with the other tables' default chains
+
+$ITN -P PREROUTING ACCEPT
+$ITN -P OUTPUT ACCEPT
+$ITN -P POSTROUTING ACCEPT
+
+$ITM -P PREROUTING ACCEPT
+$ITM -P INPUT ACCEPT
+$ITM -P FORWARD ACCEPT
+$ITM -P OUTPUT ACCEPT
+$ITM -P POSTROUTING ACCEPT
+
+$ITR -P PREROUTING ACCEPT
+$ITR -P OUTPUT ACCEPT
+
+# At this point, the tables should be in the system default state, as if there
+# had never been any firewall tweakage whatsoever
+
