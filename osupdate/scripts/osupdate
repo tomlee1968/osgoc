@@ -1,0 +1,737 @@
+#!/bin/bash
+
+# osupdate: do all that is necessary to update the OS.
+
+# Thomas Lee <thomlee@iu.edu>
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin
+
+# The strategy is: on the 3rd Tuesday of the month, the system administrator
+# runs this script on all nonproduction hosts.  This updates each OS with any
+# security or bugfix patches that have been released by RHEL since the last
+# update.  But, since it's only on the nonproduction hosts, we have a chance to
+# test the new packages and make sure there are no incompatibilities before we
+# make a similar change to the production hosts.  Then, on the 4th Tuesday of
+# each month, assuming that the previous step didn't cause any problems, the
+# system administrator runs this script on the production hosts, which installs
+# the same updates that were installed on the nonproduction hosts the week
+# before.  In this way we make sure that the production hosts' OS is the same
+# as the tested nonproduction hosts' OS.
+
+# Behind the scenes, we have a YUM server that mirrors the RHEL and EPEL
+# repositories (in the EPEL case, only the packages that we actually use on
+# anything), and before doing the ITB updates the system administrator
+# synchronizes them.  They then are not synchronized again until just before
+# the following month's ITB update.  In this way, even if the IU RHEL satellite
+# server is down on update day, we should still have all the packages on all
+# machines.  This also makes sure that both ITB and production updates will
+# install the same packages.
+
+# To keep a record of what it does, this script stores the list of updated
+# packages in $UPDATEDIR/list_of_updates_<date>.txt and the previous versions
+# of the updated packages in
+
+# $UPDATEDIR/previous_versions_of_updated_rpms-<date>.txt.
+
+###############################################################################
+# Settings
+###############################################################################
+
+UPDATEDIR=/opt/var/osupdate_data
+PLUGINDIR=/opt/etc/osupdate.d
+TEMPDIR=''
+
+###############################################################################
+# Functions
+###############################################################################
+
+function print_help() {
+    # Print some helpful messages.
+
+    cat <<EOF > /dev/stderr
+Usage: $0 [options]
+Options:
+  -a: Turn off certain automatic decisions, such as the one that automatically
+doesn't update openldap*, c-ares, or boost if bdii is present
+  -c: Run from cache
+  -d: Print debug text
+  -h: This help message
+  -n: Do not add "-y" to yum commands
+  -t: Test mode: print commands that would be executed without executing them
+Note that you can pass options to yum by placing them after a --, which
+signifies the end of the osupdate options.
+EOF
+}
+
+function handle_options() {
+    # Handle the command-line options.  The getopts command (a bash builtin)
+    # returns true as long as the positional parameters contain more
+    # constructions that look like command-line options.  It places the index
+    # of the current option in $OPTIND and the argument (if there is one) of
+    # the current option in $OPTARG.  The arguments of getopts itself are a
+    # string consisting of the options it's supposed to recognize and the
+    # variable to put the recognized option into.  Now, getopts stops when it
+    # reaches a "--", which is intentional, to allow script writers to make it
+    # possible to pass options on to other programs the script calls, and
+    # that's what we're doing here -- anything after a "--" is to be passed on
+    # to yum.  This function, after getopts hits a "--", cuts it and everything
+    # before it from $@ and saves what's left in $YUM_OPTS.  This doesn't
+    # affect the global command-line parameters; it only operates on the
+    # positional parameters passed to the function (which is why the
+    # command-line parameters have to be passed to it).
+
+    local opt
+    while getopts "acdhnt" opt; do
+	case "$opt" in
+	    a)
+		AUTO=''
+		;;
+	    c)
+		YUM_C='-C'
+		;;
+	    d)
+		DEBUG=1
+		echo "DEBUG mode on due to -d option.  You will see DEBUG messages." > /dev/stderr
+		;;
+	    h)
+		print_help
+		exit 0
+		;;
+	    n)
+		YUM_Y=''
+		;;
+	    t)
+		TEST=1
+		echo "TEST mode on due to -t option.  Update will be simulated." > /dev/stderr
+		;;
+	    ?)
+		echo "Error: Required parameter missing" > /dev/stderr
+		print_help
+		exit 1
+		;;
+	    *)
+		echo "Error: Unknown option" > /dev/stderr
+		print_help
+		exit 1
+		;;
+	esac
+    done
+    shift $(( $OPTIND - 1 ))
+    YUM_OPTS="$@"
+}
+
+vercomp () {
+    # Software version string comparator by Dennis Williamson
+    # http://stackoverflow.com/questions/4023830/how-compare-two-strings-in-dot-separated-version-format-in-bash
+
+    # Given two version strings of the form <n1>[.<n2>[.<n3>[...]]], where <n1>
+    # etc. are nonnegative integers, this returns 0 if the two are equal, 1 if
+    # the first is greater, and 2 if the second is greater.
+
+    if [[ $1 == $2 ]]
+    then
+        return 0
+    fi
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+    # fill empty fields in ver1 with zeros
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++))
+    do
+        ver1[i]=0
+    done
+    for ((i=0; i<${#ver1[@]}; i++))
+    do
+        if [[ -z ${ver2[i]} ]]
+        then
+            # fill empty fields in ver2 with zeros
+            ver2[i]=0
+        fi
+        if ((10#${ver1[i]} > 10#${ver2[i]}))
+        then
+            return 1
+        fi
+        if ((10#${ver1[i]} < 10#${ver2[i]}))
+        then
+            return 2
+        fi
+    done
+    return 0
+}
+
+function make_dir_carefully() {
+    # If the given directory doesn't exist, create it -- but first make sure
+    # there isn't already a file of that name there.  If there is, move it to
+    # <file>.bak before creating the directory.
+    local dir=$1
+
+    if [[ ! -d $dir ]]; then
+	if [[ -e $dir ]]; then
+	    if [[ $DEBUG ]]; then
+		echo "DEBUG: $dir exists but is not a directory; moving to $dir.bak" > /dev/stderr
+	    fi
+	    mv $dir $dir.bak
+	fi
+	if [[ $DEBUG ]]; then
+	    echo "DEBUG: $dir does not exist; creating it" > /dev/stderr
+	fi
+	if [[ $TEST ]]; then
+	    echo "TEST: mkdir $dir"
+	    echo "TEST: (executing command, since we won't be getting anywhere without it)"
+	fi
+	mkdir -p $dir
+    fi
+}
+
+function ensure_updatedir() {
+    # Make sure that $UPDATEDIR exists.
+    make_dir_carefully $UPDATEDIR
+}
+
+function bump_to_backup() {
+    # Given a filename, "bump" it out of the way to make way for a new file
+    # without losing the existing file.  A file named <name> will be renamed to
+    # <name>.bak.1, unless that exists, in which case it will become
+    # <name>.bak.2, etc.
+
+    local file=$1
+    if [[ -e $file ]]; then
+	local index=1
+	local testfile
+	while testfile=$file.bak.$(printf "%03d" $index) && [[ -e $testfile ]]; do
+	    index=$(( $index + 1 ))
+	done
+	if [[ $DEBUG ]]; then
+	    echo "DEBUG: $file exists -- moving it to $testfile" > /dev/stderr
+	fi
+	if [[ $TEST ]]; then
+	    echo "TEST: mv $file $testfile"
+	else
+	    mv $file $testfile
+	fi
+    fi
+}
+
+function ensure_unique_listfile() {
+    # If $LISTFILE exists, we don't want to clobber it -- this script might
+    # have been run earlier on the same day.  We don't want to lose the data
+    # about what updates were made.
+
+    bump_to_backup $LISTFILE
+
+    # Likewise with $PREVFILE
+    bump_to_backup $PREVFILE
+}
+
+function ensure_latest_goc_internal() {
+    # Make sure we're using the latest goc-internal-repo RPM.
+    # This assumes that it is available at
+    # http://yum-internal.goc/yum/goc-internal-repo.rpm
+
+    if rpm -q goc-internal-repo >/dev/null; then
+	# If it's already installed, make sure it's updated.
+	if [[ $TEST ]]; then
+	    echo "TEST: Cleaning goc-internal cache and upgrading goc-internal-repo RPM"
+	else
+	    yum --disablerepo=* --enablerepo=goc-internal clean expire-cache
+	    yum --disablerepo=* --enablerepo=goc-internal clean all
+	    yum --disablerepo=* --enablerepo=goc-internal -y -q upgrade goc-internal-repo
+	fi
+    else
+	# This is a symlink to the latest version, but if we try to just
+	# unconditionally "rpm -U" against this, it doesn't work, possibly
+	# because rpm thinks it's the same version.
+	rpm -i http://yum-internal.goc/yum/goc-internal-repo.rpm
+    fi
+}
+
+function initialize() {
+    # Do any initialization tasks that need to be done.
+
+    # Create a guaranteed empty directory so wildcards don't pick up anything.
+    # This appears to be the only sure way to prevent wildcards from doing
+    # crazy things when you're trying to hand characters that bash treats as
+    # wildcards as arguments to commands that also interpret them as wildcards.
+    TEMPDIR=$(mktemp -d /tmp/osupdate.XXXXXXXXXX)
+    # And make our CWD that newly-created blank directory.  Do NOT put any
+    # files in it.  EVER.
+    cd $TEMPDIR
+
+    declare today=$(date +%F)
+    declare arch=$(arch)
+    if [[ "${arch:(-2)}" == "86" ]]; then
+	arch=i386
+    fi
+
+    # What distro?  The following works for RHEL 5/6 ($distro will be
+    # 'redhat') and CentOS 6 ('centos') ...
+    declare distro=$(rpm -q --whatprovides system-release --qf "%{NAME}" | cut -d - -f 1)
+    if [[ ${distro#no package provides} != $distro ]]; then
+        # RHEL 5 doesn't have a 'system-release' capability, but it
+        # does have 'redhat-release', so look for that
+	distro=$(rpm -q --whatprovides redhat-release --qf "%{NAME}" | cut -d - -f 1)
+	if [[ ${distro#no package provides} != $distro ]]; then
+	    echo "ERROR: Unable to determine distro" >/dev/stderr
+	    exit 1
+	fi
+    fi
+
+    # Determine $distro_version (e.g. '6.5' if this is RHEL 6.5) and
+    # $distro_version_maj (e.g. '6').  RHEL distros have
+    # server/workstation variants, so that has to be trimmed off the
+    # end of the version number; CentOS distros don't have that.
+    declare distro_version
+    if [[ $distro == 'redhat' ]]; then
+	declare rhel_version=$(rpm -q --whatprovides redhat-release --qf "%{VERSION}")
+	declare rhel_variant=$(echo ${rhel_version#[0-9]*} | tr [[:upper:]] [[:lower:]])
+	distro_version=${rhel_version%%[^0-9]*}
+    else
+	distro_version=$(rpm -q --whatprovides system-release --qf "%{VERSION}")
+    fi
+    declare distro_ver_maj=${distro_version%%[^0-9]*}
+
+    # Find $goc_repo, the name of the local repo for this distro and
+    # version.  RHEL repos are named
+    # 'goc-rhel-<arch>-<variant>-<majver>', for example
+    # 'goc-rhel-x86_64-server-6'.  On the other hand, CentOS doesn't
+    # have the server/workstation variant, so those are
+    # 'goc-centos-x86_64-6' etc.
+    declare goc_repo
+    if [[ $distro == 'redhat' ]]; then
+	goc_repo="--enablerepo=goc-rhel-$arch-$rhel_variant-*$distro_ver_maj"
+    else
+	goc_repo="--enablerepo=goc-$distro-$arch-$distro_ver_maj --enablerepo=goc-$distro-$arch-updates-$distro_ver_maj"
+    fi
+
+    # Now we can finally set $YUM_CMD, the base YUM command that will
+    # update relative to the appropriate local repository.
+    YUM_CMD="yum -e 0 --skip-broken --disablerepo=* $goc_repo --enablerepo=goc-epel-$arch-$distro_ver_maj"
+
+    # Disable the RHN plugin, but only if it exists -- otherwise
+    # there's an error message
+    if [[ -e /usr/lib/yum-plugins/rhnplugin.py ]]; then
+	YUM_CMD="$YUM_CMD --disableplugin=rhnplugin"
+    fi
+
+    # Set some other globals that will be needed later
+    YUM_Y='-y'
+    YUM_C=''
+    YUM_OPTS=''
+    LISTFILE=$UPDATEDIR/list_of_updates-$today.txt
+    PREVFILE=$UPDATEDIR/previous_versions_of_updated_rpms-$today.txt
+    DONEFILE=$UPDATEDIR/osupdate_complete.txt
+    AUTO=1
+
+    # Handle command-line options.
+    handle_options "$@"
+    # Make sure $UPDATEDIR exists.
+    ensure_updatedir
+    # Make sure we don't clobber an existing file.
+    ensure_unique_listfile
+    # Make sure we're using the latest goc-internal-repo RPM.
+    ensure_latest_goc_internal
+
+    # Are we running on a physical Dell server?
+    if rpm -q firmware-addon-dell >& /dev/null; then
+	YUM_CMD="$YUM_CMD --enablerepo=dell-*"
+    fi
+
+    # Report the value of $YUM_CMD if $DEBUG is on
+    if [[ $DEBUG ]]; then
+	echo "DEBUG: \$YUM_CMD is: $YUM_CMD"
+    fi
+
+    # Clean the YUM cache, so we're not relying on a cache in an unknown state
+    if [[ $TEST ]]; then
+	echo "TEST: Clean YUM cache"
+    else
+	$YUM_CMD clean expire-cache
+	$YUM_CMD clean all
+    fi
+    if [[ $DEBUG ]]; then
+	echo "DEBUG: End of setup"
+    fi
+}
+
+function make_prevfile() {
+    # Make a list of the previous versions of the files in $LISTFILE (assumed
+    # to have been created before calling this function) and store it in
+    # $PREVFILE.
+
+    if [[ $TEST ]]; then
+	echo "TEST: for rpm in \$(cut -d ' ' -f 1 $LISTFILE); do rpm -q \$rpm; done | grep -v 'is not installed\$' > $PREVFILE"
+    else
+	for rpm in $(cut -d ' ' -f 1 $LISTFILE); do rpm -q $rpm; done | grep -v 'is not installed$' > $PREVFILE
+    fi
+}
+
+function update_packages() {
+    # Update the packages.  First we use "yum check-update" to make a list of
+    # the available updates, saving it in $LISTFILE, then we call make_prevfile
+    # to make a list of the previous versions of these updates in $PREVFILE,
+    # then we use "yum update" to do the updating.
+
+    local excludes=''
+
+    if [[ $AUTO ]]; then
+	# Exclude all OSG packages.  Don't update them.  If someone has
+	# installed an OSG package with the same name as an RHEL/EPEL package,
+	# it must mean they don't want the RHEL/EPEL version.  It also means
+	# the software installer takes responsibility for updating it, not the
+	# sysadmin, so they shouldn't come crying to me if some hacker exploits
+	# a security hole that was patched 5 years ago in the RHEL package.
+	#
+	# I used to check globus-common to see whether it was an OSG-specific
+	# version, and if it was, I would exclude globus* packages from the
+	# update.  Unfortunately, people started using the EPEL version of
+	# globus-common alongside various other globus* packages that were
+	# OSG-specific, so they managed to break osupdate.  So I wrote this
+	# section (2015-02-18).  It turns out this way is better, as excluding
+	# globus* skips some legitimate updates.
+	#
+	# Anyway, so first we make a list of all the packages with 'osg',
+	# 'osg32', etc. in their RPM release field.
+	declare -a osgrpms=($(rpm -qa --qf "%{NAME}|%{RELEASE}\n" | grep "|.*\bosg[[:digit:]]*\b" | cut -d\| -f1 | sort | uniq))
+	if [[ $DEBUG ]]; then
+	    echo "DEBUG: OSG RPMs are: ${osgrpms[*]}"
+	fi
+	# I wish I could quickly check which of these are unique to OSG and
+	# which are OSG-specific versions of RHEL/EPEL packages.  Oh wait, I
+	# can.
+	if [[ $TEST ]]; then
+	    declare -a updaterpms=(globus-usage)
+	else
+	    # Check for updates, skip everything before the blank line, get
+	    # only the package names, and sort it
+	    declare -a updaterpms=($($YUM_CMD check-update $YUM_OPTS | sed -re '0,/^[[:space:]]*$/d' | cut -d' ' -f1 | sed -re 's/\.[^.]+$//' | sort | uniq))
+	fi
+	# Any packages in $osgrpms that aren't also in $updaterpms need not be
+	# excluded, because they're packages unique to OSG, or at the very
+	# least there aren't updates to them, so it doesn't matter.
+	declare -a excluderpms=()
+	local osgrpm updaterpm
+	for osgrpm in "${osgrpms[@]}"; do
+	    for updaterpm in "${updaterpms[@]}"; do
+		if [[ $osgrpm == $updaterpm ]]; then
+		    excluderpms=("${excluderpms[@]}" $osgrpm)
+		    break
+		fi
+	    done
+	done
+	# Now add '-x <package>' to the $excludes string for each package in
+	# $excluderpms.
+	local excluderpm
+	for excluderpm in "${excluderpms[@]}"; do
+	    excludes="$excludes -x $excluderpm"
+	done
+	if [[ $DEBUG ]]; then
+	    echo "DEBUG: Excluded RPMs are: ${excluderpms[*]}"
+	fi
+
+	# BDII servers are weird.  Never update any openldap packages, or
+	# c-ares, or boost.
+	if rpm -q bdii > /dev/null; then
+	    local pkg
+	    for pkg in \
+		bdii \
+		boost \
+		c-ares \
+		glite-ce-monitor-client-api-c \
+		glite-security-gsoap-plugin \
+		glue-schema \
+		openldap* \
+		vdt_globus_essentials \
+		; do
+		excludes="$excludes -x $pkg"
+	    done
+	fi
+
+	# Hostname-specific exclusions
+	local host=$(hostname)
+	# Get short hostname:
+	local short="${host%%.*}"
+	# Save value of extglob for later restoration:
+	local shoptsave=$(shopt -p extglob)
+	# Get shortname minus terminal digits:
+	local sansdigits="${short/%+([0-9])/}"
+	# Get service name by squelching suffix:
+	local service="${sansdigits/%@(-dev|-int|-itb|-test)/}"
+	# Restore extglob to previous value:
+	$shoptsave
+	# Test various hostname-dependent exclusions:
+	if [[ $service == 'glidein' ]]; then
+	    local pkg
+	    for pkg in \
+		condor \
+		condor-classads \
+		condor-cream-gahp \
+		condor-procd \
+		glideinwms-factory \
+		glideinwms-factory-condor \
+		; do
+		excludes="$excludes -x $pkg"
+	    done
+	elif [[ $service == 'rquick' ]]; then
+	    excludes="$excludes -x R"
+	elif [[ $service == 'puppet' ]]; then
+	    excludes="$excludes -x 'ruby*'"
+	fi
+    fi
+
+    # Make a list of yum updates (the sed thing cuts out anything before a
+    # blank line, so we don't get yum's initial messages, just the list of
+    # packages).  Yes, we did a check-update earlier, but this time it's with
+    # $excludes.
+    if [[ $TEST ]]; then
+	echo "TEST: $YUM_CMD $YUM_OPTS $excludes check-update | sed -re '0,/^[[:space:]]*$/d' > $LISTFILE"
+    else
+	$YUM_CMD check-update $YUM_OPTS $excludes | sed -re '0,/^[[:space:]]*$/d' > $LISTFILE
+    fi
+
+    # Make a list of the updates' previous versions in case of rollback
+    make_prevfile
+
+    # Do the updates
+    if [[ $TEST ]]; then
+	echo "TEST: $YUM_CMD $YUM_C $YUM_Y $YUM_OPTS $excludes upgrade"
+    else
+	if [[ $DEBUG ]]; then
+	    echo "DEBUG: The full update command is:"
+	    echo "  $YUM_CMD $YUM_C $YUM_Y $YUM_OPTS $excludes upgrade"
+	fi
+	$YUM_CMD upgrade $YUM_C $YUM_Y $YUM_OPTS $excludes
+    fi
+}
+
+function update_dell() {
+    # Ask facter whether this is a virtual machine.  If the answer is "true",
+    # return.
+    if [[ $(facter is_virtual) == "true" ]]; then return; fi
+    # Also, if it's not a Dell, we don't know how to deal with it, so look for
+    # the 'dell-omsa-repository' RPM.
+    if ! rpm -q dell-omsa-repository >/dev/null; then return; fi
+    # Now we update the Dell firmware.
+    if [[ $TEST ]]; then
+	if rpm -q firmware-addon-dell; then
+	    echo "TEST: yum $YUM_Y remove firmware-addon-dell"
+	fi
+	if rpm -q firmware-tools; then
+	    echo "TEST: yum $YUM_Y remove firmware-tools"
+	fi
+	if [[ -e /usr/libexec/dell_dup ]]; then
+	    echo "TEST: rm -rf /usr/libexec/dell_dup"
+	fi
+	echo "TEST: yum $YUM_Y install firmware-tools"
+	echo "TEST: bootstrap_firmware | xargs yum $YUM_Y install"
+	echo "TEST: update_firmware --yes"
+	echo "TEST: yum $YUM_Y remove firmware-tools firmware-addon-dell"
+	echo "TEST: rm -rf /usr/libexec/dell_dup"
+    else
+	# Dell apparently doesn't properly increment RPM version numbers on the
+	# ir firmware RPMs; the only way to be sure you've got the latest ones
+	# is to remove them and install them again.  Dell was aware of the
+	# problem in a 2010 post I found on the Dell forums, yet here it is
+	# 2013 and it's still here.  All they have to do is stick a timestamp
+	# on the RPM release number!
+
+	# Also, apparently Dell leaves all kinds of junk left over after an
+	# update and doesn't clean it up, like broken symlinks.  We have to
+	# make sure we're really starting clean.
+
+	if rpm -q firmware-addon-dell >/dev/null; then
+	    yum $YUM_Y remove firmware-addon-dell
+	fi
+	if rpm -q firmware-tools >/dev/null; then
+	    yum $YUM_Y remove firmware-tools
+	fi
+	if [[ -e /usr/libexec/dell_dup ]]; then
+	    rm -rf /usr/libexec/dell_dup
+	fi
+	# The scripts in firmware-tools, which comes from the repo in
+	# dell-omsa-repository, include bootstrap_firmware and update_firmware
+	yum $YUM_Y install firmware-tools
+	# bootstrap_firmware scans the hardware and comes up with a list of
+	# standardized RPM firmware update names, which Dell uses in
+	# dell-omsa-repository, so this will get the latest firmware updates
+	# for the hardware on this machine
+	which bootstrap_firmware >&/dev/null && bootstrap_firmware | xargs yum $YUM_Y install
+	# update_firmware looks at the firmware update RPMs installed and, if
+	# any of them actually is an update, installs it
+	which update_firmware >&/dev/null && update_firmware --yes
+	# firmware-addon-dell is actually from EPEL, but all the firmware
+	# update RPMs require it as a dependency, so removing it will remove
+	# the update RPMs too -- it's good to do this because as clever as this
+	# update system is, Dell doesn't actually have version numbers on the
+	# RPMs, so if we leave them around, next time YUM won't know whether
+	# the new ones on the repo are any newer, so there will never be
+	# further updates
+	yum $YUM_Y remove firmware-tools firmware-addon-dell
+	# Dell leaves all its firmware update junk lying around in this
+	# directory, so clean it up
+	rm -rf /usr/libexec/dell_dup
+    fi
+}
+
+function run_scripts_with_suffix() {
+    # If there are any executable files in $PLUGINDIR whose names end in $1,
+    # execute them.  If there aren't, or if $PLUGINDIR doesn't exist, do
+    # nothing.  This includes some taint checking -- $PLUGINDIR must be owned
+    # by root, group-secure, and not world-writable, and the file in question
+    # must also be root-owned, group-secure, and not world-writable.  We don't
+    # want just anyone to be able to toss a script in there to be run by root.
+
+    local suffix=$1 file
+
+    if set +o | grep -q 'set -o noglob'; then
+	echo "WARNING: noglob is set -- won't be able to find scripts" >/dev/stderr
+    fi
+    # Return immediately if there is no directory called $PLUGINDIR.
+    if [[ ! -d $PLUGINDIR ]]; then
+	return
+    fi
+    # Check to make sure that $PLUGINDIR is owned by root.
+    if [[ $(stat -c '%u' $PLUGINDIR) -ne 0 ]]; then
+	echo "$PLUGINDIR not owned by root; ignoring" >/dev/stderr
+	return 1
+    fi
+    # Check to make sure that $PLUGINDIR isn't writable by some nonroot group.
+    if [[ $(stat -c '%g' $PLUGINDIR) -ne 0 && $(( 0$(stat -c '%a' $PLUGINDIR) & 0020 )) -ne 0 ]]; then
+	echo "$PLUGINDIR writable by nonroot group; ignoring" >/dev/stderr
+	return 1
+    fi
+    # Check to make sure that $PLUGINDIR isn't world-writable.
+    if [[ $(( 0$(stat -c '%a' $PLUGINDIR) & 0002 )) -ne 0 ]]; then
+	echo "$PLUGINDIR world-writable; ignoring" >/dev/stderr
+	return 1
+    fi
+    # Look for files named *$suffix in $PLUGINDIR.
+    pushd $PLUGINDIR >/dev/null
+    for file in $PLUGINDIR/*$suffix; do
+	# If the file isn't owned by root, skip it.
+	if [[ $(stat -c '%u' $file) -ne 0 ]]; then
+	    echo "$file not owned by root; skipping" >/dev/stderr
+	    continue
+	fi
+	# If the file isn't group-secure (doesn't have group=root and is
+	# group-writable), skip it.
+	if [[ $(stat -c '%g' $file) -ne 0 && $(( 0$(stat -c '%a' $file) & 0020 )) -ne 0 ]]; then
+	    echo "$file writable by nonroot group; skipping" >/dev/stderr
+	    continue
+	fi
+	# If the file is world-writable, skip it.
+	if [[ $(( 0$(stat -c '%a' $file) & 0002 )) -ne 0 ]]; then
+	    echo "$file is world-writable; skipping" >/dev/stderr
+	    continue
+	fi
+	# If the file is executable, execute it.
+	if [[ -x $file ]]; then
+	    if [[ $TEST ]]; then
+		echo "TEST: Execute $file"
+	    else
+		$file
+	    fi
+	fi
+    done
+    popd >/dev/null
+}
+
+function run_rpmconf() {
+    # Runs rpmconf.  This searches for .rpmsave and .rpmnew files.  Some
+    # explanation follows.
+    #
+    # In this explanation, librpm refers to the RPM library, used by the rpm
+    # and yum commands.  An 'RPM' refers to an RPM package file.  The packager
+    # who creates the RPM configures its behavior using its .spec file.  We
+    # will be referring to a configuration file or 'config file', and librpm
+    # knows that it is one because the packager has configured it as such in
+    # the RPM's .spec file.  We will also be referring to the 'old RPM' and the
+    # 'new RPM,' in the sense that an upgrade has occurred, replacing an older
+    # version of the software with a newer one using RPM packages.
+    #
+    # Normally, when librpm updates an RPM, it looks at each config file to see
+    # whether the config file from the old RPM has been changed.  It can tell
+    # by comparing the current config file's signature with the file's
+    # signature from the old RPM.  If the config file hadn't been changed,
+    # librpm replaces it with the file from the new RPM.  If the config file
+    # had been changed, though, librpm leaves it alone but saves the new
+    # version of the config file from the new RPM in the same directory, but
+    # with the suffix .rpmnew appended to its filename.  However, it's also
+    # possible for the packager to force an update to the config files (if
+    # they've changed format, for example), and if that's the case, librpm
+    # renames the old config file with the suffix .rpmsave appended and puts
+    # the new config file in its place.
+    #
+    # All of this can leave multiple .rpmnew and .rpmsave files lying around
+    # over time, with little indication which version of the RPM resulted in
+    # their existence.  What's more, when there's a forced update, someone has
+    # to notice that there's an .rpmsave file and reconcile its changes into
+    # the new config file.  rpmconf is a utility that detects .rpmnew and
+    # .rpmsave files and prompts the user to choose what to do with them.
+
+    # Make sure rpmconf is installed.
+    if ! rpm -q rpmconf >&/dev/null; then
+	yum -y -q install rpmconf
+    fi
+    # If rpmconf is < version 0.2, the -c and --frontend options don't work.
+    local rpmconf_version=$(rpm -q --qf="%{VERSION}" rpmconf)
+    local rpmconf_options='-a'
+    vercomp $rpmconf_version '0.2.1'
+    case $? in
+	0|1)
+	    rpmconf_options="$rpmconf_options --frontend=vimdiff"
+	    ;;
+    esac
+    vercomp $rpmconf_version '0.3.1'
+    case $? in
+	0|1)
+	    rpmconf_options="$rpmconf_options -c"
+	    ;;
+    esac
+    echo "Running 'rpmconf $rpmconf_options' ..."
+    /usr/sbin/rpmconf $rpmconf_options
+}
+
+function run_puppet() {
+    # Normally Puppet runs every 30 minutes on each host.  However, some
+    # collaborators who have managed to convince us that they need root access
+    # have disabled Puppet when it did something they found inconvenient.  They
+    # then, of course, forgot to ever reenable it, leading to later problems
+    # when expected Puppet updates didn't happen.  Because we apparently can't
+    # have nice things, we will manually reenable Puppet here, and run it if it
+    # hasn't run for more than 30 minutes.
+
+    puppet agent --enable
+    if [[ $(( $(date +%s) - $(stat -c %Y /etc/puppet/classes.txt) )) -gt 1800 ]]; then
+	echo "Running 'puppet agent -t' ..."
+	puppet agent -t
+    fi
+}
+
+function finalize() {
+    # Do any tasks that need done before exiting.
+    rmdir $TEMPDIR
+    touch $DONEFILE
+}
+
+###############################################################################
+# Main
+###############################################################################
+
+# The logic, boiled down to its essentials
+
+# Set things up.
+initialize "$@"
+# Run any prelude scripts found.
+run_scripts_with_suffix .preupdate
+# Update the packages.
+update_packages
+# Update the Dell stuff, if applicable.
+update_dell
+# Run any postlude scripts found.
+run_scripts_with_suffix .postupdate
+# Run rpmconf.
+run_rpmconf
+# Run Puppet.
+run_puppet
+# Finish up.
+finalize
+echo "osupdate complete."
