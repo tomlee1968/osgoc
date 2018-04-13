@@ -1,0 +1,361 @@
+#!/bin/bash
+
+# gocloc -- mutual exclusion lockfile mechanism for OSG GOC
+# Thomas Lee <thomlee@iu.edu>
+# Begun 2011/05/07
+# Last modified 2011/05/07
+
+# The problem with lockfiles in shell scripts, especially those that run via
+# cron, is that scripts, being interpreted rather than compiled, easily fall
+# victim to race conditions.  It's quite possible for another process to jump
+# in after you've checked whether a lockfile exists and create or delete that
+# lockfile, leaving you in a state where it exists, but you think it doesn't,
+# or vice versa.  However, using a lock *directory* allows you to at least
+# combine those two steps.
+
+# Exit codes are similar to those used by the time(1) command:
+
+# If gocloc obtained the lock and ran the command, the exit code is the exit
+# code of the command.
+
+# If gocloc exited immediately because of an error with the command-line
+# options, the exit code is 127.
+
+# If gocloc timed out while waiting for the lock, the exit code is 126.
+
+# If gocloc encountered another error condition, the exit code is 125.
+
+# The exception to this is the -c option, which forcibly clears a lockspace.
+# This returns a 0 exit code on success, but on failure it returns either 127
+# (bad command-line options) or 125 (a strange error).
+
+###############################################################################
+# Definitions
+###############################################################################
+
+# Path
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/opt/sbin:/opt/bin
+
+# Exit codes
+ENO_INVOKE=127
+ENO_TIMEOUT=126
+ENO_ERROR=125
+
+###############################################################################
+# Defaults for options
+###############################################################################
+
+# Lock directory
+LOCKMAIN=/opt/var/lock
+
+# Lockspace
+LOCKSPACE=gocloc
+
+# Timeout
+TIMEOUT=60
+
+# Whether to clear the lockspace
+CLEARLOCK=
+
+# Verbose
+VERBOSE=
+
+###############################################################################
+# Functions
+###############################################################################
+
+function print_help() {
+    cat <<EOF
+Usage: $0 [<options>] <cmd>
+  Options:
+  -h: This help message
+  -c: Forcibly clear lockspace defined by -d and -s; doesn't run <cmd>
+  -d <dir>: Main lock directory (default=$LOCKMAIN)
+  -s <name>: Name of lockspace to check/use (default=$LOCKSPACE)
+  -t <timeout>: Timeout in seconds (default=$TIMEOUT)
+  -v: Verbose mode; print debug information
+EOF
+}
+
+function handle_options() {
+    local opt
+    while getopts "hd:s:t:v" opt; do
+	case "$opt" in
+	    h)
+		print_help
+		exit 0
+		;;
+	    c)
+		CLEARLOCK=1
+		;;
+	    d)
+		LOCKMAIN=$OPTARG
+		if [ "$LOCKMAIN" != "/var/lock" ] \
+		    && [ "$LOCKMAIN" != "/opt/var/lock" ] \
+		    && [ "$LOCKMAIN" != "/usr/local/var/lock" ]; then
+		    echo "Error: -d option out of range." > /dev/stderr
+		    exit $ENO_INVOKE
+		fi
+		;;
+	    s)
+		LOCKSPACE=$OPTARG
+		if [ -z "$LOCKSPACE" ]; then
+		    echo "Error: -z option cannot be null." > /dev/stderr
+		    exit $ENO_INVOKE
+		fi
+		;;
+	    t)
+		TIMEOUT=$OPTARG
+		;;
+	    v)
+		VERBOSE=1
+		;;
+	    ?)
+		echo "Error: Required parameter missing." > /dev/stderr
+		exit $ENO_INVOKE
+		;;
+	    *)
+		;;
+	esac
+    done
+    shift $(( $OPTIND - 1 ))
+    REMAINING_OPTS="$@"
+}
+
+function runcmd() {
+    # Run the command contained in the remaining options after the getopts.
+
+    if [ "$VERBOSE" ]; then
+	echo "Running command: $@" > /dev/stderr
+    fi
+    eval $@
+    return $?
+}
+
+function lock() {
+    # Technically the mkdir command in the main loop does the locking, since
+    # it's the directory's existence that determines it, but this completes the
+    # job.  Note that a race condition is still technically possible, because
+    # time passes between the creation of $LOCKDIR and the calling of this
+    # function, but supposedly we have written things such that this can't
+    # happen.  Be sure $LOCKDIR is set (to $LOCKMAIN/$LOCKSPACE, usually)
+    # before calling this.
+
+    if [ -z "$LOCKDIR" ] || [ "$LOCKDIR" == "/" ]; then
+	echo "Error: Invalid \$LOCKDIR." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    echo $$ > $LOCKDIR/pid
+    date +%s > $LOCKDIR/time
+    echo $REMAINING_OPTS > $LOCKDIR/cmd
+}
+
+function locked() {
+    # Returns true (0) if $LOCKDIR still exists and false (1) if it has gone
+    # away.  Note that a race condition is possible, because time passes
+    # between the check for the directory's existence and when this function
+    # exits.
+
+    if [ -z "$LOCKDIR" ] || [ "$LOCKDIR" == "/" ]; then
+	echo "Error: Invalid \$LOCKDIR." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    if [ -d "$LOCKDIR" ]; then
+	return 0
+    else
+	return 1
+    fi
+}
+
+function wait_for_lock() {
+    # Wait until the lock clears or until $TIMEOUT is reached, whichever comes
+    # first.  Returns true (0) if the lock cleared and false (1) if $TIMEOUT
+    # was reached first.  Exits with status 3 if something weird occurs.
+
+    local now when
+    if [ -z "$LOCKDIR" ] || [ "$LOCKDIR" == "/" ]; then
+	echo "Error: Invalid \$LOCKDIR." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    when=`cat $LOCKDIR/time 2> /dev/null`
+    if [ "$?" == "0" ]; then	# Successfully read timestamp file
+	if [ -z "$when" ]; then
+	    echo "Error: Timestamp file has null contents." > /dev/stderr
+	    exit $ENO_ERROR
+	fi
+	while [ 1 ]; do
+	    sleep 1
+	    if ! locked; then			# Lock cleared
+		if [ "$VERBOSE" ]; then
+		    echo "Lock cleared while waiting for timeout" > /dev/stderr
+		fi
+		return 0
+	    fi
+	    now=`date +%s`
+	    if (( (now - when) >= TIMEOUT )); then
+		if [ "$VERBOSE" ]; then
+		    echo "Timeout reached" > /dev/stderr
+		fi
+		return 1			# Reached the timeout
+	    fi
+	done
+    else
+	# Control could only be here if the timestamp file didn't exist, which
+	# could only happen if
+	# A. the space has already been unlocked
+	# B. it's still locked but
+	#   1. the PID file was never written
+	#   2. the PID file has been deleted
+	if ! locked; then return 0; fi
+	echo "Error: Locked but timestamp file doesn't exist." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+}
+
+function unlock() {
+    # Unlock the lockspace.  Keeping in mind that a "gocloc -d / -s ''" could
+    # be disastrous, run a check or two first, although we should have already
+    # made sure that $LOCKMAIN is an allowed value and $LOCKSPACE is nonempty.
+    # Be sure that $LOCKDIR is set (to $LOCKMAIN/$LOCKSPACE, usually) before
+    # calling this.
+
+    if [ "$LOCKMAIN" != "/var/lock" ] \
+	&& [ "$LOCKMAIN" != "/opt/var/lock" ] \
+	&& [ "$LOCKMAIN" != "/usr/local/var/lock" ]; then
+	echo "Error: Invalid \$LOCKMAIN." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    if [ -z "$LOCKSPACE" ]; then
+	echo "Error: Invalid \$LOCKSPACE." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    if [ -z "$LOCKDIR" ] || [ "$LOCKDIR" == "/" ]; then
+	echo "Error: Invalid \$LOCKDIR." > /dev/stderr
+	exit $ENO_ERROR
+    fi
+    rm -rf $LOCKDIR
+}
+
+function execute() {
+    # This is the normal process once the lock directory exists.  A race
+    # condition at this point is extremely unlikely unless $TIMEOUT is set very
+    # small, and the lowest it can be is 1 second.  Only on a very slow or
+    # heavily loaded system would it take more than 1 second to run the 'lock'
+    # function (q.v.).
+
+    lock
+    runcmd "$REMAINING_OPTS"
+    local exval=$?
+    unlock
+    return $exval
+}
+
+function handle_locked() {
+    # $lockdir already existed -- this space is locked by another process.  The
+    # plan is now to make sure it should be locked, wait for it to unlock, run
+    # the command if it unlocks, and give up if the timeout is reached before
+    # it unlocks.
+
+    local pid
+
+    # Read the PID file.  It might not exist, or it might be empty.
+    pid=`cat $LOCKDIR/pid 2> /dev/null`
+    if [ "$?" == "0" ]; then
+	if [ -n "$pid" ]; then
+	    if kill -0 $pid; then
+		# The process exists.  The lockspace is really locked.  The
+		# only question now is how long to wait before giving up.
+		wait_for_lock
+		if [ "$?" == "0" ]; then
+		    # The lock cleared while we were waiting.  Recurse.
+		    lock_and_run
+		    return $?
+		else
+		    # We hit the timeout and the lock remains.  Exit.
+		    if [ "$VERBOSE" ]; then
+			echo "Timed out while waiting for lock." > /dev/stderr
+		    fi
+		    exit $ENO_TIMEOUT
+		fi
+	    else
+		# The process is dead.  Forcibly unlock and recurse.
+		rm -rf $LOCKDIR
+		lock_and_run
+		return $?
+	    fi
+	else
+	    # The PID is an empty string!  This could only happen if something
+	    # has corrupted the PID file.
+	    echo "Error: PID file exists but is empty." > /dev/stderr
+	    exit $ENO_ERROR
+	fi
+    else
+	# Control could only be here if the PID file didn't exist, which would
+	# only happen if
+	# A. the space has already been unlocked
+	# B. it's still locked but
+	#   1. the PID file was never written
+	#   2. the PID file has been deleted
+	if locked; then
+	    echo "Error: Locked but PID file does not exist." > /dev/stderr
+	    exit $ENO_ERROR
+	else
+	    # The space became unlocked!  Recurse.
+	    lock_and_run
+	    return $?
+	fi
+    fi
+}
+
+function lock_and_run() {
+    # A bit complex, but basically what we do is check for a lock, and if it's
+    # not locked we run the command.  If it's locked we wait until the timeout
+    # for the lock to clear and try again.
+
+    # Make sure $LOCKMAIN exists; it would be rare if it didn't
+    if [ ! -d $LOCKMAIN ]; then
+	mkdir -p $LOCKMAIN
+    fi
+    # Simultaneously check for and create the lock directory
+    if mkdir $LOCKDIR &> /dev/null; then
+	# Control could only be here if the directory didn't exist before, but
+	# now does.  Go on the assumption that we have the lock.
+	if [ "$VERBOSE" ]; then
+	    echo "gocloc has now locked $LOCKSPACE." > /dev/stderr
+	fi
+	execute
+	return $?
+    else
+	if [ "$VERBOSE" ]; then
+	    echo "gocloc has found $LOCKSPACE already locked." > /dev/stderr
+	fi
+	handle_locked
+    fi
+}
+
+###############################################################################
+# Main
+###############################################################################
+
+# Make sure we're root
+if [ "$UID" != "0" ]; then
+    echo "Error: You are not root, and this script may only be run by root." > /dev/stderr
+    exit $ENO_INVOKE
+fi
+
+# Get the options
+handle_options "$@"
+
+# Set $LOCKDIR.
+LOCKDIR=$LOCKMAIN/$LOCKSPACE
+
+# Check for $CLEARLOCK (-c option).
+if [ "$CLEARLOCK" ]; then
+    unlock
+    echo "Lockspace $LOCKSPACE cleared." > /dev/stderr
+    exit 0
+fi
+
+# Do our thing.
+lock_and_run
+exit $?
