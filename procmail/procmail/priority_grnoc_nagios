@@ -1,0 +1,100 @@
+###############################################################################
+# GRNOC NAGIOS
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRIORITY to one of the priority codes
+# 4. Set PRI_SERVICE to the service the message pertains to
+# 5. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 6. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# Specifically this is about messages that come from the GRNOC Nagios server,
+# which is pretty rare now.  They come from nagios@nocmon.grnoc.iu.edu.
+
+# The difficulty we face here is that Nagios reports not only the priority of
+# the message but also the stage of the alert process -- problem,
+# acknowledgement, or recovery.  I'm putting this in PRI_STAGE.
+
+:0
+* ! PRI_CLASS ?? .+
+* ^from:.*nagios@nocmon\.grnoc\.iu\.edu
+{
+  PRI_CLASS=grnoc-nagios
+
+  # PROBLEM/ACKNOWLEDGEMENT/RECOVERY alerts
+  :0
+  * ^subject: *\** *\/(problem|acknowledgement|recovery)
+  {
+    PRI_STAGE=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+
+    :0
+    * ^subject: *\** *(problem|acknowledgement|recovery) *alert *- *\/[^/]+
+    {
+      PRI_HOST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+
+      :0
+      * ^subject:.*/\/.* is [^ ]+
+      {
+        PRI_INFO=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+        PRI_SERVICE=`echo "$PRI_INFO" | sed -re "s/[[:space:]]+is[[:space:]]+.*$//"`
+	# The last word is the most important here
+        PRI_STATUS=`echo "$PRI_INFO" | sed -re "s/^.*[[:space:]]+is[[:space:]]+//" -e "s/[[:space:]]*\**[[:space:]]*$//"`
+
+	# An acknowledgement means that they've entered into the system that we
+        # know about it, so there's no possibility for this to be an important
+        # message.
+        :0
+        * PRI_STAGE ?? ^^acknowledgement^^
+        {
+          PRIORITY=info
+        }
+
+        # Otherwise (note the E flag) we have a critical
+        :0E
+        * PRI_STATUS ?? ^^critical^^
+        {
+          PRIORITY=crit
+          PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_INFO"
+        }
+
+        # The only other possibility is if the alert has cleared
+        :0E
+        * PRI_STATUS ?? ^^ok^^
+        {
+          PRIORITY=info
+        }
+      }
+    }
+  }
+
+  # "Host UP/DOWN" messages
+  :0
+  * ^subject: *host *\/(down|up)
+  {
+    PRI_STATUS=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+    PRI_CLASS=grnoc-nagios
+
+    :0
+    * ^subject: *host *(up|down) *alert *for *\/[^.]+
+    {
+      PRI_HOST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+      PRI_SERVICE=`echo "$PRI_HOST" | sed -re "s/(-(dev|docteam|int|itb|test))?[0-9]*$//"`
+
+      # This means a host is down.  This is bad.
+      :0
+      * PRI_STATUS ?? ^^down^^
+      {
+        PRIORITY=alert
+	PRI_MESSAGE="$PRI_HOST $PRI_CLASS_SUFFIX"
+      }
+
+      :0E
+      * PRI_STATUS ?? ^^up^^
+      {
+        PRIORITY=info
+      }
+    }
+  }
+}

@@ -1,0 +1,96 @@
+# priority_posthandler
+# Adjust priority (usually downward) based on hostname, service, etc.
+
+# It's often the case that software considers its problems to be VERY IMPORTANT
+# and anything that goes wrong to be world-shaking, demanding attention RIGHT
+# NOW.  We at OSG Operations, however, have a bigger picture to consider, and
+# some of these problems have to take a back seat to others.
+
+# Most of the software we use isn't developed here and is still in beta or
+# otherwise active development somewhere else.  The programmers of that
+# software may have included some extra-noisy error messages or unsuppressable
+# debug messages to tell them when something's going on, but frankly, we don't
+# care.  These messages often end up as root emails, and we want them out of
+# the way so we can see the truly critical messages that we can actually do
+# something about.
+
+# Also, some of our machines are development or testing machines, and messages
+# from those, while valuable for debugging, simply can't take priority over
+# errors coming from production services.  What would be a critical error on
+# the production version of a service becomes noncritical on the ITB version.
+
+# What's more, this is MY set of procmail config files, not everyone's.  If a
+# service is reporting critical errors, but it's not a service that I work with
+# or know what to do with, the error is frankly going to be of a lower priority
+# for me than it would be for someone else.
+
+###############################################################################
+# Adjust priority by hostname
+###############################################################################
+
+# For ITB and development servers and staff servers, downgrade the priority of
+# the messages
+:0
+* PRI_HOST ?? ^^((ece|echism|kagross|rquick|schmiecs|perfsonar|psds|cassandra|meshconfig|psetf|psrsv)[0-9]*|[^-\.]+-(bw|dev|docteam|int|itb|lt|sl|test)[0-9]*)^^
+{
+  :0
+  * PRIORITY ?? .+
+  {
+    OLD_PRIORITY=$PRIORITY
+
+    # If it's already notice/info/debug, downgrade to debug, as that's
+    # the lowest it can get.
+    :0
+    * OLD_PRIORITY ?? ^^(notice|info|debug)^^
+    {
+      NEW_PRIORITY=debug
+    }
+
+    # If it's err/warn, downgrade to notice, the highest non-error priority.
+    :0E
+    * OLD_PRIORITY ?? ^^(err|warn)^^
+    {
+      NEW_PRIORITY=notice
+    }
+
+    # If it's emerg/alert/crit, downgrade to err, the highest
+    # non-critical priority.
+    :0E
+    * OLD_PRIORITY ?? ^^(emerg|alert|crit)^^
+    {
+      NEW_PRIORITY=err
+    }
+
+    # Set that new priority.  Set a note in the header.
+    :0
+    * NEW_PRIORITY ?? .+
+    {
+      PRIORITY=$NEW_PRIORITY
+
+      :0fhW
+      | formail -A "X-TJL-Procmail-Note: Priority downgraded from $OLD_PRIORITY due to hostname"
+    }
+  }
+}
+
+# We seem to have started sending out RSV test messages with CRITICAL
+# priority -- please don't ping my phone with 100 test messages
+:0
+* ^Subject:.*\[rsvtest\]
+{
+  OLD_PRIORITY=$PRIORITY
+  PRIORITY=debug
+
+  :0fhW
+  | formail -A "X-TJL-Procmail-Note: Priority downgraded from $OLD_PRIORITY due to [rsvtest]"
+}
+
+###############################################################################
+# Adjust priority by service
+###############################################################################
+
+# Strategy: Messages are bumped down in priority if they're services
+# that I'm not responsible for keeping up in some way.
+
+# Special topic: RSV.  RSV reports "CRITICAL" status far more often
+# than it should, sadly.

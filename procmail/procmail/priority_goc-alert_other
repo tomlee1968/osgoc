@@ -1,0 +1,131 @@
+###############################################################################
+# goc-alert_other
+###############################################################################
+
+# This is meant to catch goc-alert mail that comes from some other source not
+# already caught by some other rc file.  Typically this is debug mail sent by
+# Soichi to test the system.  I'm going to try to filter as much of that out as
+# possible and throw it into the "debug" priority.
+
+# Dell OpenManage Server Administrator (OMSA) also sends email
+# straight to goc-alert.
+
+# The TSM backup system also sends status messages to goc-alert.
+
+# Perfsonar also sends messages straight to goc-alert.
+
+###############################################################################
+# Select class
+###############################################################################
+
+# This class is only for mail that hasn't already been assigned a class, so
+# look for the class header and don't match if it's already got one.
+:0
+* ! PRI_CLASS ?? .+
+{
+  :0
+  * ^TO_goc-alert@googlegroups\.com
+  {
+    PRI_CLASS=goc-alert_other
+  }
+
+  # If there are multiple recipients, Google will change the To:
+  # header to "Undisclosed recipients", which means we have to look
+  # for something else.
+  :0E
+  * ^list-id: *<goc-alert\.googlegroups\.com>
+  {
+    PRI_CLASS=goc-alert_other
+  }
+}
+
+# However it got that way, if PRI_CLASS is "goc-alert_other", test further.
+
+:0
+* PRI_CLASS ?? ^^goc-alert_other^^
+{
+  # Soichi sometimes sends out test messages
+  :0
+  * ^from:.*(soichih@gmail\.com|hayashis\@(indiana|iu)\.edu)
+  {
+    PRI_HOST=none
+    PRI_SERVICE=test
+  }
+
+  # Moderator spam reports from Google
+  :0E
+  * ^subject:.*moderator's spam report for
+  {
+    PRI_HOST=none
+    PRI_SERVICE=googlegroups
+  }
+
+  # TSM backup system status messages
+  :0E
+  * ^subject: *tsm (status|alert) for
+  {
+    PRI_SERVICE=tsm
+
+    :0B
+    * have not completed
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  # Perfsonar
+  :0E
+  * ^x-ms-exchange-parent-message-id: *<.* *\/perfsonar[0-9]+
+  {
+    PRI_SERVICE=perfsonar
+    PRI_HOST=$MATCH
+
+    :0B
+    * mesh error
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  # Any message from root on our servers
+  :0E
+  * ^from:.*root@\/[a-z][-a-z0-9]*
+  {
+    PRI_HOST=$MATCH
+
+    # OMSA messages
+    :0
+    * ^subject: *openmanage +alert +from +.*: *\/[a-z]+
+    {
+      PRI_CODE=$MATCH
+      PRI_SERVICE=omsa
+
+      :0
+      * B ?? ^ *the message: *\/[^ ].*
+      {
+        PRI_INFO=$MATCH
+        PRI_MESSAGE="omsa/$PRI_HOST $PRI_CODE $PRI_INFO"
+	PRI_SPEAK="Open Manage hardware alert from $PRI_HOST. $PRI_INFO. Repeat. Open Manage hardware alert from $PRI_HOST. $PRI_INFO."
+      }
+    } # End of OMSA messages
+
+    :0E
+    * PRI_SERVICE ?? ^^tsm^^
+    {
+      :0
+      * B ?? backups with failed files
+      {
+        PRI_STATUS=warn
+      }
+
+      :0E
+      {
+        PRI_STATUS=ok
+      }
+    }
+  } # End of messages from root@*
+} # End of goc-alert messages

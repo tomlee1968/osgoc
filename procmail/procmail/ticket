@@ -1,0 +1,16 @@
+# Ticketing system notices
+:0:
+* ^Subject:.*\[GOCJIRA\]
+.active-ticket.jira/
+
+:0:
+* ^Subject:.*\[JIRA\]
+.active-ticket.jira/
+
+:0:
+* ^From:.*osg@tick(-indy)?\.globalnoc\.iu\.edu
+.active-ticket.osg-fp/
+
+:0:
+* ^From: *"GOC Tracker"
+.active-ticket.tracker/

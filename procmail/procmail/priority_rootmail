@@ -1,0 +1,166 @@
+###############################################################################
+# rootmail
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 5. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# For mail sent directly to root (or sysadmin), which is still
+# forwarded to me.
+
+###############################################################################
+# Select class
+###############################################################################
+:0
+* ! PRI_CLASS ?? .+
+* ^TO_.*(root|sysadmin)@[a-z][-a-z0-9]*\.(grid\.iu|uits\.(indiana|iupui))\.edu
+{
+  # Mark the mail with the class: rootmail
+  PRI_CLASS=rootmail
+}
+
+# In some cases I get mail directly from root (usually if debugging something)
+:0E
+* ! PRI_CLASS ?? .+
+* ^from:.*(root|sysadmin)@[a-z][-a-z0-9]*\.(grid\.iu|uits\.(indiana|iupui))\.edu
+* ^TO_.*thomlee@iu\.edu
+{
+  PRI_CLASS=rootmail
+}
+
+# However it got set, if the class is rootmail, do further testing
+:0
+* PRI_CLASS ?? ^^rootmail^^
+{
+  #############################################################################
+  # Determine host
+  #############################################################################
+  :0
+  * ^TO_.*(root|sysadmin)@\/[a-z][-a-z0-9]*
+  {
+    PRI_HOST=$MATCH
+  }
+
+  :0E
+  * ^from:.*(root|sysadmin)@\/[a-z][-a-z0-9]*
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine priority if possible
+  #############################################################################
+
+  ### backup
+  # This is something I wonder whether we can stop
+  :0
+  * ^subject:.*cron.*rsync +.*-e +"?ssh
+  {
+    PRI_SERVICE=rsync
+  }
+
+  # Note how rules after the first have an E in the first line; this prevents
+  # procmail from running an email through a test if it matched the previous
+  # test
+
+  ### denyhosts
+  :0E
+  * ^subject: *denyhosts +report +from
+  {
+    PRI_SERVICE=denyhosts
+  }
+
+  ### nas devices
+  :0E
+  * PRI_HOST ?? ^^nas
+  {
+    PRI_SERVICE=nas
+  }
+
+  ### sudo (when disabled)
+  :0E
+  * ^subject: *\*\*\* *security +information
+  {
+    PRI_SERVICE=sudo
+  }
+
+  # Funafuti sends these whenever /etc/hosts changes (though the cron handler should get these)
+  :0E
+  * PRI_HOST ?? ^^funafuti^^
+  * ^subject:.*cron.*/opt/sbin/hostsync_ldap\.pl
+  {
+    PRI_SERVICE=hostsync
+  }
+
+  # RSV has these problems occasionally
+  :0E
+  * PRI_HOST ?? ^^rsv(-itb)?[0-9]*^^
+  {
+    PRI_SERVICE=rsv
+  }
+
+  # Repo's update_mirror.py script throws root emails when it tries to connect
+  # to a website that times out -- obviously this is not a problem with repo
+  # but with the target website
+  :0E
+  * PRI_HOST ?? ^^repo(-itb)?[0-9]*^^
+  {
+    PRI_SERVICE=repo
+  }
+
+  # Display throws these when it can't connect to a MySQL server
+  :0E
+  * PRI_HOST ?? ^^display(-itb)?[0-9]*^^
+  {
+    PRI_SERVICE=display
+  }
+
+  # Soichi's monitor.grid.iu.edu throws off tons of ignorable email (and
+  # occasional important email so we can't just ignore it all) due to his
+  # policy of creating downstream ignore rules rather than fixing the cause.
+  # The machine needs its own subsection.  The priority_monitor file should
+  # catch these but doesn't for some reason.
+  :0E
+  * PRI_HOST ?? ^^monitor^^
+  {
+    # This depends on something we can't control
+    :0
+    * ^subject:.*cron.*/usr/local/monitor/bdii_[^ ]+\.cache
+    {
+      PRI_SERVICE=is
+    }
+
+    # Gocbot errors -- these don't concern me; it's Soichi's critter
+    :0E
+    * ^subject:.*cron.*/usr/local/monitor/gocbot
+    * B ?? ^php fatal error:
+    {
+      PRI_SERVICE=gocbot
+    }
+  }
+
+  # Fail2ban
+  :0E
+  * ^subject:.*\[fail2ban\]
+  {
+    PRI_SERVICE=fail2ban
+  }
+
+  # service-monitor test script
+  :0E
+  * ^subject:.*cron.*/opt/service-monitor/.*/test\.sh
+  {
+    PRI_SERVICE=sm-test
+  }
+
+  # If PRI_SERVICE hasn't been set by something else by now, set it from PRI_HOST
+  :0E
+  * ! PRI_SERVICE ?? .+
+  {
+    PRI_SERVICE=`echo "$PRI_HOST" | sed -re "s/(-(dev|docteam|int|itb|test))?[0-9]*$//"`
+  }
+}

@@ -1,0 +1,224 @@
+###############################################################################
+# Munin "alerts" (Munin calls them alerts, but few require ALERT priority)
+###############################################################################
+
+# This procmailrc file is part of my priority system.  It is a source-specific
+# file, meaning that its goal is to detect messages that come from a given
+# source (specifically, directly from the Munin server, in this case) and
+# determine what service they pertain to.  It is important that every message
+# that is from the Munin server cause PRI_CLASS to be set to 'munin' and
+# PRI_SERVICE to be set to the service the message pertains to.  It may set
+# other variables as well, such as PRI_HOST and PRI_STATUS.
+
+# Normally we don't want to set PRIORITY in these source-specific scripts, but
+# Munin is special, as it uses numerical thresholds to determine whether a
+# quantity is out of bounds, and how far.  So this script can set PRIORITY.
+
+# There are four statuses that Munin can alert about -- critical, where a
+# quantity has entered its critical range; warning, where a quantity has
+# entered its warning range; cleared, where a quantity was either critical or
+# warning but no longer is either; and unknown, where Munin has no value for a
+# quantity.
+
+# There can be more than one message in the same email, so check for critical
+# first, then warning, then the rest.
+
+# First, ensure that we won't do anything in this file if PRI_CLASS is already
+# set
+:0
+* ! PRI_CLASS ?? .+
+{
+  # Now determine whether this is from Munin in one way or another
+  :0
+  * ^x-tjl-source: *munin
+  {
+    PRI_CLASS=munin
+  }
+
+  :0E
+  * ^from:.*munin@dubois\.uits\.indiana\.edu
+  {
+    # This is class "munin"
+    PRI_CLASS=munin
+  }
+
+  :0E
+  * ^from:.*munin@munin\.grid\.iu\.edu
+  {
+    PRI_CLASS=munin
+  }
+}
+
+# This is my new format of compact Munin alert; it looks like
+
+# X-TJL-Source: munin
+# X-TJL-Munin-Host: <host>
+# X-TJL-Munin-Plugin: <plugin>
+# X-TJL-Munin-Status: <worst>
+# Subject: [munin] [<host>] [<plugin>] [<worst>] <title>
+#
+# Munin plugin <plugin> (<title>) has detected a <worst> condition on host <host>.
+#
+# Crit: quantity1=value1,quantity2=value2
+# Warn: quantity3=value3
+# Unkn: quantity4
+
+# where <worst> is the status of the worst problem (CRITICAL/WARNING/ok), and
+# the Crit/Warn/Unkn lines will only appear if such an alert exists
+
+# However we figured it out, if PRI_CLASS is 'munin', find out more.
+:0
+* PRI_CLASS ?? ^^munin^^
+{
+  :0BH
+  * ^x-tjl-munin-host: *\/[a-z][a-z0-9-]*
+  {
+    PRI_HOST=$MATCH
+
+    :0BH
+    * ^x-tjl-munin-plugin: *\/[^ ].*
+    {
+      PRI_SERVICE=$MATCH
+    }
+
+    :0BH
+    * ^x-tjl-munin-status: *\/[^ ].*
+    {
+      PRI_STATUS=$MATCH
+    }
+
+    :0
+    * PRI_STATUS ?? ^^crit
+    * B ?? ^crit: *\/[^ ].*
+    {
+      PRI_INFO=$MATCH
+    }
+
+    :0E
+    * PRI_STATUS ?? ^^warn
+    * B ?? ^warn: *\/[^ ].*
+    {
+      PRI_INFO=$MATCH
+    }
+
+    :0E
+    * B ?? ^unkn:
+    {
+      PRI_STATUS=unkn
+
+      :0B
+      * ^unkn: *\/[^ ].*
+      {
+	PRI_INFO=$MATCH
+      }
+    }
+
+    PRI_SPEAK="Mewnin alert from $PRI_HOST: $PRI_SERVICE is $PRI_STATUS.  Repeat, Mewnin alert from $PRI_HOST.  $PRI_SERVICE is $PRI_STATUS."
+    PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_INFO"
+  }
+
+  # Old Munin format
+
+  # Capture the hostname
+  :0EB
+  * ^Munin alert about \[[^;]+;\/[^]]+
+  {
+    PRI_HOST=$MATCH
+
+    # Critical range
+    :0B
+    * exceeds critical range of
+    {
+      PRI_STATUS=crit
+    }
+
+    # Warning range
+    :0EB
+    * exceeds warning range of
+    {
+      PRI_STATUS=warn
+    }
+
+    # Unknown value
+    :0EB
+    * has an unknown value
+    {
+      PRI_STATUS=unknown
+    }
+
+    # An alert ends -- a message that doesn't require action
+    :0EB
+    * -----$$$$-----
+    {
+      PRI_STATUS=clear
+    }
+
+    # Anything else
+    :0E
+    {
+      PRI_STATUS=unmatched
+    }
+
+    # We now have host and status; determine priority based on those
+
+    :0
+    * PRI_STATUS ?? ^^(warn|crit)^^
+    {
+      PRIORITY=$PRI_STATUS
+    }
+
+    :0E
+    {
+      PRIORITY=notice
+    }
+
+  }
+
+  # Soichi's monitor now sends yet another email, after futzing with the format!  Joy.
+  # Capture the hostname
+  :0EB
+  * ^Munin-Host: *\/[^ ]+
+  {
+    PRI_HOST=$MATCH
+
+    # Critical range
+    :0B
+    * exceeds critical range of
+    {
+      PRI_STATUS=crit
+    }
+
+    # Warning range
+    :0EB
+    * exceeds warning range of
+    {
+      PRI_STATUS=warn
+    }
+
+    # Unknown value
+    :0EB
+    * has an unknown value
+    {
+      PRI_STATUS=unknown
+    }
+
+    # Anything else
+    :0E
+    {
+      PRI_STATUS=unmatched
+    }
+
+    # Set provisional priority based on Munin status; later rules downgrade this
+    # for nonproduction hosts
+    :0
+    * PRI_STATUS ?? ^^(warn|crit)^^
+    {
+      PRIORITY=$PRI_STATUS
+    }
+
+    :0E
+    {
+      PRIORITY=notice
+    }
+  }
+}

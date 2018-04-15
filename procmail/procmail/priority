@@ -1,0 +1,364 @@
+###############################################################################
+# Priority level folders
+###############################################################################
+
+# I'm dividing my alert emails into priority levels using the system that
+# syslog uses.  Here is a list of the alert levels, in order of decreasing
+# priority, and what to do with them.  Obviously a situation of higher priority
+# must take precedence over a problem with lower priority, but in general they
+# are divided into three categories: the kind that herald a very bad situation
+# that must be fixed when it happens, 24/7; the kind that are still very
+# important, but are about a problem that can wait until business hours; and
+# the kind that are merely informational and don't represent a problem that
+# needs to be fixed at all.
+
+# I. EMERG, ALERT, CRIT: Top priority, 24/7
+#   A. EMERG[ency]: all or several production services down -- drop everything
+#      and fix this, day or night
+#   B. ALERT: a production service is down
+#   C. CRIT[ical]: a production service is up but not working properly
+
+# II. ERR, WARN: Fix during business hours
+#   A. ERR[or]: errors on a production service that aren't keeping it from
+#      running properly, or nonproduction services are down
+#   B. WARN[ing]: warnings on a production service that aren't keeping it from
+#      running properly, or nonproduction services are up but not working
+#      properly -- fix this during working hours, unless there's a separate
+#      higher-priority issue
+
+# III. NOTICE, INFO, DEBUG: Nothing to fix
+#   A. NOTICE: a significant but normal status message
+#   B. INFO: a normal status message of moderate significance
+#   C. DEBUG: a status message of interest only if debugging
+
+# IV. TRASH: I don't care
+#   This is a rarely-used status for recurring emails emitted during normal
+#   operation of a service.  Ordinarily these should be shut off at the source,
+#   but if I don't have the ability to do that, I can at least keep them out of
+#   my mailboxes.
+
+# We don't want me developing a blase attitude toward critical (and higher)
+# messages because of bogus crits.  It's very important to make sure that
+# nothing goes into .level.(emerg|alert|crit)/ unless it's serious business.
+# Things that wouldn't require me to wake up in the middle of the night, if
+# they happened in the middle of the night, don't go in those folders.  Nothing
+# from an ITB server, for example, should ever go into those top three folders.
+# The highest possible severity an ITB or development server can generate
+# should be "err".
+
+# My goal when I receive such a high-priority message should be (in order of
+# preference):
+#
+# 1. Fix the problem that causes it.
+# 2. Stop the message from going out.
+# 3. Lower the priority of the message.
+#
+# In all three cases, the result should be the cessation of high-priority
+# messages.
+
+# III and IV (NOTICE, INFO, DEBUG, and TRASH) messages should usually be shut
+# off at the source, if possible; messages that aren't a call for someone to do
+# something shouldn't go to goc-alert.  The only reasons these messages should
+# go out at all are:
+#
+# * They can't be shut off -- we don't have the ability/access to do so, or the
+#   software won't work without them, or the default configuration is to send
+#   them and the software is frequently reinstalled with the default
+#   configuration
+#
+# * They're for debugging and someone is actively debugging the service at the
+#   moment -- they should be shut off again once debugging is finished or
+#   whoever turned them on has moved to another project
+#
+# I should note when saying this, however, that this refers to the priority of
+# the message before any adjustment due to source -- I'm not talking about a
+# NOTICE message from an ITB server that was originally a CRITICAL when
+# procmail first received it.
+
+###############################################################################
+# Sources
+###############################################################################
+
+# Alert messages arrive via one of these ways:
+
+# * Root mail: Often, root mail from one of the servers/VMs is set to come
+# directly to me -- or directly via dubois, anyway.
+
+# * goc-alert: Root mail sometimes goes to the goc-alert@googlegroups.com list,
+# which I'm subscribed to.  Otherwise it is the same as the root mail.
+
+# * service-monitor: On many service hosts, Soichi's service-monitor script
+# monitors logs and such and sends email to goc-alert@googlegroups.com when it
+# sees something it thinks is significant.
+
+# * gocmon: Some root mail gets forwarded to Soichi's gocmon at Google AppSpot,
+# where it gets re-forwarded to goc-alert@googlegroups.com.  The problem with
+# this is that it arrives with:
+# From: GOC Monitor <no-reply@opensciencegrid.com>
+# To: goc-alert@googlegroups.com
+# Reply-to: osggocdev@googlegroups.com
+# Subject: [goc-alert] [monitor] [rootmail] ...
+# In other words, there is no standardized, matchable indication in the email
+# header of what service or host this comes from.  However, this is a forwarded
+# root mail, so it is possible to match on the forwarded mail's headers, which
+# are in the body of the message.
+
+# * GRNOC: The GRNOC's Nagios sometimes sends out alerts.  This is getting
+# rarer.
+
+###############################################################################
+# Process
+###############################################################################
+
+# The way this will work:
+
+# First of all, these notification message recipes will handle only certain
+# classes of notification messages.  Other mail (like mail from mailing lists
+# or mail directly to me specifically) will fall through and be handled by
+# later recipes.
+
+# We first send the mail through the source-detecting files.  These
+# are priority_munin, priority_monitor_rootmail, priority_gocmon, etc.
+# These look at the source of the message and must set PRI_CLASS and
+# PRI_SERVICE.  They might set other variables when possible.  The
+# point here is to determine what service the message pertains to.
+
+# Next we send the mail through service-based files.  These will look at the
+# content of the message and determine the priority, setting the PRIORITY
+# variable.  This increases the chance that messages from different sources
+# about the same events will be given the same priority.  They may set other
+# variables when possible.  If PRIORITY can or will be crit or higher, they
+# will set PRI_MESSAGE.
+
+# This rc file will then set the following mail headers using formail:
+
+# X-TJL-Priority from PRIORITY
+
+# X-TJL-Procmail-Class from PRI_CLASS
+
+# X-TJL-Procmail-Hostname from PRI_HOST
+
+# X-TJL-Procmail-Service from PRI_SERVICE
+
+# X-TJL-Procmail-Status from PRI_STATUS
+
+# X-TJL-Procmail-Message from PRI_MESSAGE
+
+# A posthandling script tests PRI_HOST and modifies the priority, usually
+# downward, as this is what reduces the priority of messages from ITB and
+# development hosts.
+
+# A later set of recipes will decide what to do based on these headers.
+# Currently that's by priority (see "File them by priority").
+
+###############################################################################
+# Variable reference
+###############################################################################
+
+# List of variables used by this set of files:
+
+# PRIORITY: the priority assigned -- will be emerg, alert, crit, etc.
+
+# PRI_CLASS: the class/type/grouping that the message falls into -- is this a
+# root email?  Is it a Munin alert?  Is it from service-monitor?
+
+# PRI_HOST: the hostname affected by the notification -- this is usually the
+# short hostname, like "display1"
+
+# PRI_SERVICE: the service affected by the notification (often, but not 100%,
+# the same as the hostname)
+
+# PRI_STATUS: the status reported by whatever did the notification -- this is
+# not necessarily the priority assigned
+
+# PRI_SPEAK: a summary of what's going on that will be spoken using
+# text-to-speech software when present.  Can be longer than PRI_MESSAGE, but
+# keep it to words and numbers; symbols will usually be ignored.  You might
+# want to repeat important parts of it, or leave the important details until
+# the end, because the listener might not have been paying attention (or might
+# have had the volume turned down) at the very beginning.
+
+# PRI_MESSAGE: a very brief summary of what's going on -- this can potentially
+# be sent via SMS to a cell phone, so it should be as short as possible, and
+# the most important information should come first.  Situations where the
+# priority can't be "crit" or higher don't necessarily need to set this, as
+# they won't be sent via SMS.
+
+###############################################################################
+# Logfiles
+###############################################################################
+
+# Soichi in particular has a practice that I find repugnant of sending
+# messages from logfiles through his service-monitor system, or even
+# directly through to the goc-alert list, and then doing nothing about
+# those messages at all, causing hundreds of messages per day that go
+# on for months or years.  Those messages belong where they started,
+# in logfiles.  Kill them now before they go any farther.
+
+:0
+* ^subject:.*/var/log/
+/dev/null
+
+:0
+* ^subject:.*/usr/local/ticket/app/logs/
+/dev/null
+
+###############################################################################
+# Include rc files for different notification sources to determine service
+###############################################################################
+
+# From anything I'm testing
+INCLUDERC=$PMDIR/priority_mytest
+
+# From Munin
+INCLUDERC=$PMDIR/priority_munin
+
+# From Puppet reports
+INCLUDERC=$PMDIR/priority_puppet
+
+# From service-monitor, but through my script on that host which adds info
+INCLUDERC=$PMDIR/priority_sm_myscript
+
+# Catch service-monitor RSV messages, which can contain alerts for
+# more than one service in the same email
+INCLUDERC=$PMDIR/priority_sm_rsv
+
+# From service-monitor, but not through my script
+INCLUDERC=$PMDIR/priority_sm
+
+# From monitor
+INCLUDERC=$PMDIR/priority_monitor
+
+# From GRNOC
+INCLUDERC=$PMDIR/priority_grnoc_nagios
+
+# From Fermicloud Nagios, meta-monitoring service-monitor
+INCLUDERC=$PMDIR/priority_fermicloud_nagios
+
+# Root mail that comes via monitor
+INCLUDERC=$PMDIR/priority_monitor_rootmail
+
+# From gocmon, on Google AppSpot
+INCLUDERC=$PMDIR/priority_gocmon
+
+# Something else that comes from goc-alert@googlegroups.com
+INCLUDERC=$PMDIR/priority_goc-alert_other
+
+# Other root mail coming directly to me
+INCLUDERC=$PMDIR/priority_rootmail
+
+# Other cron mail directly to me
+INCLUDERC=$PMDIR/priority_cron
+
+###############################################################################
+# Service based priority selection
+###############################################################################
+
+INCLUDERC=$PMDIR/priority_services
+
+###############################################################################
+# Priority posthandling can mod the priority (usually down)
+###############################################################################
+
+INCLUDERC=$PMDIR/priority_posthandler
+
+###############################################################################
+# Set priority headers in message
+###############################################################################
+
+:0fhW
+| formail -i "X-TJL-Procmail-Was-Here: Yes"
+
+:0fhW
+* PRI_HOST ?? .+
+| formail -i "X-TJL-Procmail-Hostname: $PRI_HOST"
+
+:0fhW
+* PRI_CLASS ?? .+
+| formail -i "X-TJL-Procmail-Class: $PRI_CLASS"
+
+:0fhW
+* PRI_SERVICE ?? .+
+| formail -i "X-TJL-Procmail-Service: $PRI_SERVICE"
+
+:0fhW
+* PRI_STATUS ?? .+
+| formail -i "X-TJL-Procmail-Status: $PRI_STATUS"
+
+:0fhW
+* PRI_MESSAGE ?? .+
+| formail -i "X-TJL-Procmail-Message: $PRI_MESSAGE"
+
+:0fhW
+* PRI_SPEAK ?? .+
+| formail -i "X-TJL-Speak: $PRI_SPEAK"
+
+:0fhW
+* PRIORITY ?? .+
+| formail -i "X-TJL-Priority: $PRIORITY"
+
+###############################################################################
+# Text me if crit or higher
+###############################################################################
+
+# :0
+# * PRIORITY ?? ^^(alert|crit|emerg)^^
+# {
+
+#   # If it's a Munin message, don't send me a text if the message is
+#   # going directly to me and not to goc-issues -- in many cases mail
+#   # goes to both, for debugging purposes, and I might be enabling or
+#   # disabling the ones that go directly to me while debugging Munin.
+
+#   :0
+#   * PRI_CLASS ?? ^^munin^^
+#   {
+#     :0cbhW
+#     * ! ^To: .*thomlee@(iu|indiana)\.edu
+#     | /home/thomlee/bin/text_my_phone.pl
+#   }
+
+#   # Fermicloud Nagios crits about oasis-replica have been clogging up
+#   # my phone; the test needs to be rewritten, but that's in Soichi's
+#   # purview.
+#   :0E
+#   * ^x-tjl-monitor-type: *fermicloud-nagios
+#   * PRI_HOST ?? ^^oasis-replica.grid.iu.edu^^
+#   {
+#   }
+
+#   # Note that this would terminate processing if it weren't for the c flag
+#   :0EcbhW
+#   | /home/thomlee/bin/text_my_phone.pl
+# }
+
+###############################################################################
+# File them by priority
+###############################################################################
+
+# Now that priorities have been assigned in the X-TJL-Priority header, use that
+# header to file them in their appropriate folders.
+
+:0
+* PRIORITY ?? ^^trash^^
+/dev/null
+
+:0E
+* PRIORITY ?? ^^(emerg|alert|crit|err|warn|notice|info|debug)^^
+{
+  # Make sure the priority is lowercase.  (I suppose some other script might
+  # have assigned a priority and done so in upper case.)
+  PRIORITY=`echo "$PRIORITY" | tr \[:upper:\] \[:lower:\]`
+
+  # And file it in its folder.
+  :0:
+  .level.$PRIORITY/
+}
+
+# Messages that were handled by the above system but didn't get assigned a
+# priority should go in .level/ -- these would be the ones that got a
+# $PRI_CLASS but no $PRIORITY.
+
+:0E:
+* PRI_CLASS ?? .+
+.level/

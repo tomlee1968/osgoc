@@ -1,0 +1,88 @@
+###############################################################################
+# Puppet
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRIORITY to one of the priority codes
+# 4. Set PRI_SERVICE to the service the message pertains to
+# 5. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 6. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+###############################################################################
+# Set class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+{
+  :0
+  * ^from:.*report@puppet
+  * ^subject: *puppet report for
+  {
+    PRI_CLASS=puppet
+  }
+}
+
+# Deal with cases where PRI_CLASS is 'puppet', however that was set
+:0
+* PRI_CLASS ?? ^^puppet^^
+{
+  PRI_SERVICE=puppet
+
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  :0
+  * ^subject: *puppet report for *\/[^. ]+
+  {
+    PRI_HOST=$MATCH
+  }
+
+  ###############################################################################
+  # Determine status
+  ###############################################################################
+
+  :0
+  * B ?? \ *\(emerg\):
+  {
+    PRI_STATUS=emerg
+  }
+  :0E
+  * B ?? \ *\(alert\):
+  {
+    PRI_STATUS=alert
+  }
+  :0E
+  * B ?? \ *\(crit\):
+  {
+    PRI_STATUS=crit
+  }
+  :0E
+  * B ?? \ *\(err\):
+  {
+    PRI_STATUS=err
+  }
+  :0E
+  * B ?? \ *\(warn(ing)?\):
+  {
+    PRI_STATUS=warn
+  }
+  :0E
+  * B ?? \ *\(notice\):
+  {
+    PRI_STATUS=notice
+  }
+  :0E
+  * B ?? \ *\(info\):
+  {
+    PRI_STATUS=info
+  }
+  :0E
+  * B ?? \ *\(debug\):
+  {
+    PRI_STATUS=debug
+  }
+}

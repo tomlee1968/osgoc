@@ -1,0 +1,83 @@
+###############################################################################
+# mytest
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 5. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# This catches mail from anything I'm testing, like the Nagios monitor
+# running on radioflyer.
+# These messages look like this:
+
+# From: <nagios@radioflyer.uits.indiana.edu>
+# Subject: ** X (Host|Service) Alert: host is Z **
+# To: thomlee@iu.edu
+#
+# ***** Nagios *****
+#
+# Notification Type: X
+# Host: host
+# State: Z
+# Address: IP.AD.DR.ESS
+# Info: etc. etc.
+#
+# Date/Time: Dow Mon DD HH:MM:SS TZ YYYY
+
+#   where X is the notification type (can be PROBLEM, RECOVERY,
+# FLAPPINGSTART, ACKNOWLEDGEMENT, etc.)
+#   Z is the state (can be OK, CRITICAL, UP, DOWN, etc.)
+
+###############################################################################
+# Select class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+{
+  :0
+  * ^from:.*nagios@radioflyer\.uits\.indiana\.edu
+  {
+    PRI_CLASS=mytest
+  }
+}
+
+# Deal with cases where PRI_CLASS is 'mytest', however that was set
+:0
+* PRI_CLASS ?? ^^mytest^^
+{
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  :0
+  * B ?? ^host: *\/[^\.]+
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine service
+  #############################################################################
+
+  :0
+  * B ?? ^service: *\/
+  {
+    PRI_SERVICE=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  #############################################################################
+  # Determine status if possible
+  #############################################################################
+
+  :0
+  * B ?? ^state: *\/
+  {
+    PRI_STATUS=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_INFO"
+}

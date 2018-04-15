@@ -1,0 +1,47 @@
+###############################################################################
+# cron
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 5. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# For mail sent from the cron daemon on some system directly to me
+
+###############################################################################
+# Select class
+###############################################################################
+:0
+* ! PRI_CLASS ?? .+
+* ^from:.*\(cron daemon\)
+{
+  # Mark the mail with the class: cron
+  PRI_CLASS=cron
+}
+
+# However it got set, if the class is cron, do further testing
+:0
+* PRI_CLASS ?? ^^cron^^
+{
+  #############################################################################
+  # Determine host
+  #############################################################################
+  :0
+  * ^from:.*@\/[^.]*
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine priority if possible
+  #############################################################################
+
+  :0
+  * ^subject:.*crlsync[-_]check\.sh
+  {
+    PRI_SERVICE=crlsync-check
+  }
+}

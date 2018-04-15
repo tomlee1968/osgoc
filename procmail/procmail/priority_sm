@@ -1,0 +1,299 @@
+###############################################################################
+# service-monitor
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 5. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# Soichi's service-monitor generates a lot of mail that does an end-run around
+# the root mail catcher and sends mail to goc-alert@googlegroups.com instead.
+# Because we all know that Google is far more reliable than anything we could
+# do.  Anyway, the hallmarks of such email are easy to match.
+
+# Unfortunately there are two ways this email gets sent out.  It sends it to
+# goc-alert@googlegroups.com, but also there's a script that sends it to me
+# directly -- the good thing is that this script is something I have control
+# over.  See priority_sm_myscript for the rc file that handles that.  This file
+# is for the ones that don't go through that script.
+
+###############################################################################
+# Select class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+{
+  # If something has set x-tjl-source to service-monitor already, use that.
+  :0
+  * ^x-tjl-source: *service-monitor
+  {
+    PRI_CLASS=service-monitor
+  }
+
+  # Otherwise, look for signs
+  :0E
+  * ^from: +"?[^.]+(\.grid\.iu|\.uits\.(indiana|iupui))\.edu"? +<goc@opensciencegrid\.org>
+  * ^TO_(goc-alert@googlegroups\.com|thomlee@dubois\.uits\.indiana\.edu)
+  {
+    PRI_CLASS=service-monitor
+  }
+}
+
+# Deal with cases where PRI_CLASS is 'service-monitor', however that was set
+:0
+* PRI_CLASS ?? ^^service-monitor^^
+{
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  :0
+  * ^from: +"?\/[a-z][-a-z0-9]*
+  {
+    PRI_HOST=$MATCH
+  }
+
+  :0E
+  * ^subject:.*cron +<[^@]+@\/[^>]+
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine status if possible
+  #############################################################################
+
+  # These messages often have a [ERROR] or [WARN] in their subjects
+  :0
+  * ^subject:.*\[\/(err|warn)
+  {
+    PRI_STATUS=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  #############################################################################
+  # Determine priority if possible
+  #############################################################################
+
+  # If there's a preassigned priority, use that.
+  :0
+  * ^x-tjl-monitor-status: *\/[^ ]+
+  {
+    PRIORITY=$MATCH
+  }
+
+  # Log Alert -- I don't know what causes these, but it's something involving
+  # RSV
+  :0E
+  * ^subject:.*\[rsv\..*log alerts
+  {
+    :0
+    * ^subject:.*\[\/rsv\.[^]]+
+    {
+      PRI_SERVICE=$MATCH
+    }
+
+    PRIORITY=err
+  }
+
+  # There was a change in RSV mail format sometime in mid to late
+  # 2012.  All of it comes with incredibly unhelpful mail headers:
+
+  # From: "monitor.grid.iu.edu" <goc@opensciencegrid.org>
+  # Subject: [rsvtest] Problem with central services
+
+  # This means that the above code that sets PRI_HOST is always going
+  # to be "monitor" for these, and the problem is very rarely on
+  # monitor.grid itself.  The first line in the mail body looks like
+  # this:
+
+  # > Mon 03/25/13 11:15:02 : OSG_Display_1 RSV status is CRITICAL : display1.grid.iu.edu
+
+  # So we must extract the hostname from that.
+
+  # RSV tests
+  :0E
+  * ^subject:.*\[rsvtest\]
+  {
+    # "Problem with central services" sounds bad, but the same subject line
+    # goes on critical and warning emails alike
+    :0
+    * ^subject.*problem with central services$
+    {
+      # Capture the service status
+      :0B
+      * [0-9][0-9]:[0-9][0-9]:[0-9][0-9] +: +.* +rsv status is \/[^ ]+
+      {
+        PRI_STATUS=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+      }
+
+      # Capture the real hostname
+      :0B
+      * [0-9][0-9]:[0-9][0-9]:[0-9][0-9] +: +.* +rsv status is .+ +: +\/[^\.]+
+      {
+	PRI_HOST=$MATCH
+      }
+
+      # Get the service name
+      :0
+      * PRI_HOST ?? ^^\/[^0-9]+
+      {
+        PRI_SERVICE=$MATCH
+      }
+
+      # Critical and warning -> crit/warn
+      :0
+      * PRI_STATUS ?? ^^\/(crit|warn)
+      {
+        PRIORITY=$MATCH
+      }
+    }
+  } # End of RSV tests
+
+  # "Problem with top level BDII" sounds serious, but it's actually a
+  # report about errors occurring elsewhere that we have little
+  # control over.  In fact, I don't know why we get these.
+  :0E
+  * PRI_HOST ?? ^^monitor^^
+  * ^subject:.*problem with top level bdii
+  {
+    PRI_SERVICE=top_level_bdii
+  }
+
+  # bdii
+  :0E
+  * PRI_HOST ?? ^^(bundy|riley|is(-itb)?[0-9]*)^^
+  {
+    PRI_SERVICE=is
+  }
+
+  # blogs
+  :0E
+  * PRI_HOST ?? ^^blogs(-itb)?[0-9]*^^
+  {
+    PRI_SERVICE=blogs
+
+    # > ERROR:planet:Error 503 while updating feed <...>
+    :0B
+    * ^(> *)?error:
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  # denyhosts
+  :0E
+  * ^subject:.*denyhosts +report +from
+  {
+    PRI_SERVICE=denyhosts
+  }
+
+  # display
+  :0E
+  * PRI_HOST ?? ^^display
+  {
+    PRI_SERVICE=display
+
+    :0B
+    * - (error) -
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  ### GratiaWeb
+  :0E
+  * PRI_HOST ?? ^^gratiaweb
+  {
+    PRI_SERVICE=gratiaweb
+  }
+
+  ### JIRA
+  :0E
+  * PRI_HOST ?? ^jira
+  {
+    PRI_SERVICE=jira
+  }
+
+  # lvs
+  :0E
+  * PRI_HOST ?? ^^lvs
+  {
+    PRI_SERVICE=lvs
+  }
+
+  # myosg
+  :0E
+  * PRI_HOST ?? ^^myosg
+  {
+    PRI_SERVICE=myosg
+  }
+
+  # oasis
+  :0E
+  * ^subject:.*\[oasis\]
+  {
+    PRI_SERVICE=oasis
+  }
+
+  # OIM
+  :0E
+  * PRI_HOST ?? ^^oim
+  {
+    PRI_SERVICE=oim
+  }
+
+  # Perfsonar
+  :0E
+  * PRI_HOST ?? ^^perfsonar
+  {
+    PRI_SERVICE=perfsonar
+  }
+
+  # Repo -- this is experimental
+  :0E
+  * PRI_HOST ?? ^^repo
+  {
+    PRI_SERVICE=repo
+  }
+
+  # rsvprocess
+  :0E
+  * PRI_HOST ?? ^rsvprocess
+  {
+    PRI_SERVICE=rsvprocess
+  }
+
+  # Ticket
+  :0E
+  * PRI_HOST ?? ^^ticket
+  {
+    PRI_SERVICE=ticket
+  }
+
+  # TWiki
+  :0E
+  * PRI_HOST ?? ^^twiki
+  {
+    PRI_SERVICE=twiki
+  }
+
+  # Tx
+  :0E
+  * PRI_HOST ?? ^^tx
+  {
+    PRI_SERVICE=tx
+  }
+
+  # Web
+  :0E
+  * PRI_HOST ?? ^^web
+  {
+    PRI_SERVICE=web
+  }
+
+  PRI_MESSAGE="$PRI_SERVICE/$PRI_HOST $PRI_STATUS $PRI_INFO"
+}

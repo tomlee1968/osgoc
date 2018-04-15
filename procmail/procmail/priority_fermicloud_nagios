@@ -1,0 +1,104 @@
+###############################################################################
+# fermicloud_nagios
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 5. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# This catches mail from the Nagios monitor running on Fermicloud.
+# These messages look like this:
+
+# From: <nagios@fermicloud123.fnal.gov>
+# Subject: ** X Service Alert: host.grid.iu.edu/Y is Z **
+# To: <goc-alert.googlegroups.com>
+#
+# ***** Nagios *****
+#
+# Notification Type: X
+#
+# Service: Y
+# Host: host.grid.iu.edu
+# Address: 129.79.53.N
+# State: Z
+#
+# Date/Time: Dow Mon DD HH:MM:SS TZ YYYY
+#
+# Additional Info:
+#
+# text text text
+
+#   where X is the notification type (can be PROBLEM, RECOVERY,
+# FLAPPINGSTART, ACKNOWLEDGEMENT, etc.)
+#   Y is the service (usually "Service Monitor" here)
+#   Z is the state (can be OK, CRITICAL, UP, DOWN, etc.)
+
+###############################################################################
+# Select class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+{
+  :0
+  * ^from:.*nagios@fermicloud[0-9]+\.fnal\.gov
+  {
+    PRI_CLASS=fermicloud-nagios
+  }
+}
+
+# Deal with cases where PRI_CLASS is 'fermicloud-nagios', however that was set
+:0
+* PRI_CLASS ?? ^^fermicloud-nagios^^
+{
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  :0
+  * B ?? ^host: *\/[^ ][^\.]+
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine service
+  #############################################################################
+
+  :0
+  * B ?? ^service: *\/[^ ].*
+  {
+    PRI_SERVICE=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  :0E
+  * PRI_HOST ?? .+
+  {
+    PRI_SERVICE=`echo "$PRI_HOST" | sed -re 's/[[:digit:]]+$//' -e 's/-(dev|int|itb|test)$//'`
+  }
+
+  #############################################################################
+  # Determine status if possible
+  #############################################################################
+
+  :0
+  * B ?? ^state: *\/[^ ].*
+  {
+    PRI_STATUS=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  #############################################################################
+  # Get the info line
+  #############################################################################
+
+  :0
+  * B ?? ^info: *\/.*
+  {
+    PRI_INFO=$MATCH
+  }
+
+  PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_INFO"
+}

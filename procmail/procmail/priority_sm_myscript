@@ -1,0 +1,183 @@
+###############################################################################
+# service-monitor (via my script)
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRI_SERVICE to the service the message pertains to
+# 4. Set PRI_HOST to the short hostname the message pertains to
+# 5. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 6. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# Soichi's service-monitor generates a lot of mail that does an end-run around
+# the root mail catcher and sends mail to goc-alert@googlegroups.com instead.
+# Because we all know that Google is far more reliable than anything we could
+# do.  Anyway, the hallmarks of such email are easy to match.
+
+# Unfortunately there are two ways this email gets sent out.  It sends it to
+# goc-alert@googlegroups.com, but also there's a script that sends it to me
+# directly -- the good thing is that this script is something I have control
+# over.  I can have it add whatever headers I like before the email goes out.
+# This script is at monitor.grid.iu.edu:/usr/local/monitor/gocalert/thomlee.
+
+# Headers I have it add:
+#
+# X-TJL-Source: service-monitor
+# X-TJL-Monitor-Host: Host the alert comes from
+# X-TJL-Monitor-Status: Can be crit/err/warn/debug
+
+###############################################################################
+# Select class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+* ^x-tjl-source: *service-monitor
+{
+  # This is class "service-monitor-myscript"
+  PRI_CLASS=service-monitor-myscript
+
+  #############################################################################
+  # Determine hostname
+  #############################################################################
+
+  :0
+  * ^x-tjl-monitor-host: *\/[^ ]+
+  {
+    PRI_HOST=$MATCH
+  }
+
+  #############################################################################
+  # Determine service
+  #############################################################################
+
+  # Adding these on a case-by-case basis
+
+  :0
+  * ^x-tjl-monitor-service: *\/[^ ].*
+  {
+    PRI_SERVICE=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+  }
+
+  :0E
+  * ^subject:.*openmanage alert
+  {
+    # This is a hardware alert from Dell OpenManage.  Can range from trivial to
+    # catastrophic.
+
+    # At the end of the subject, after a colon, is the code word for the
+    # condition.
+    :0
+    * ^subject:.*openmanage alert from .*: *\/[^: ]+
+    {
+      PRI_SERVICE="dellom-$MATCH"
+    }
+
+    # The actual message is in the body.
+    :0
+    * B ?? ^ *the message: *\/.*
+    {
+      PRI_INFO=$MATCH
+    }
+
+    PRI_SPEAK="Dell OpenManage alert from $PRI_HOST.  $PRI_INFO.  Repeat: Dell OpenManage alert from $PRI_HOST.  $PRI_INFO."
+    PRI_MESSAGE="$PRI_HOST/dellom: $PRI_INFO"
+#    LOG="Service: $PRI_SERVICE${nl}"
+#    LOG="Message: $PRI_MESSAGE${nl}"
+  }
+
+  :0E
+  * PRI_HOST ?? ^^(bundy|riley)^^
+  {
+    PRI_SERVICE=is
+  }
+
+  # sudo
+  :0E
+  * B ?? user not in sudoers
+  {
+    PRI_SERVICE=sudo
+  }
+
+  :0E
+  * PRI_HOST ?? ^^dahmer^^
+  {
+    PRI_SERVICE=rsv
+  }
+
+  # TSM backup system status messages
+  :0E
+  * ^subject: *tsm status for
+  {
+    PRI_SERVICE=tsm
+
+    :0B
+    * have not completed
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  # 'Problem with top level BDII' messages have nothing to do with us
+  :0E
+  * ^subject:.*problem with top level bdii
+  {
+    PRI_SERVICE=top_level_bdii
+  }
+
+  # The fallback is just to derive the service from the hostname
+  :0E
+  * ! PRI_SERVICE ?? .+
+  {
+    PRI_SERVICE=`echo "${MATCH}" | sed -re 's/(-(dev|docteam|int|itb|test))?[0-9]*$//'`
+  }
+
+  #############################################################################
+  # Corrections in service
+  #############################################################################
+
+  # Errors from when an IS server backs up its data
+  :0
+  * PRI_SERVICE ?? ^^is^^
+  {
+    :0
+    * ^subject: *cron.*rsync.*goc@backup\.goc
+    {
+      PRI_SERVICE=backup
+    }
+  }
+
+  #############################################################################
+  # Determine priority if possible
+  #############################################################################
+
+  # If there's a preassigned priority, use that.
+  :0
+  * ! PRI_STATUS ?? .+
+  * ^x-tjl-monitor-status: *\/[^ ]+
+  {
+    PRI_STATUS=$MATCH
+    PRIORITY=$PRI_STATUS
+  }
+
+  # Let's grab anything on the subject line after the last [tag] and put it in
+  # $PRI_INFO (unless it's set already).
+  :0
+  * ! PRI_INFO ?? .+
+  * ^subject:.* *\/[^] ][^]]*$
+  {
+    PRI_INFO=`echo "${MATCH}" | sed -re 's/[[:space:]]$//'`
+  }
+
+  # Set PRI_MESSAGE, unless something's already done that.
+  :0
+  * ! PRI_MESSAGE ?? .+
+  {
+    PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_INFO"
+  }
+#  LOG="host: $PRI_HOST${nl}"
+#  LOG="service: $PRI_SERVICE${nl}"
+#  LOG="status: $PRI_STATUS${nl}"
+#  LOG="message: $PRI_MESSAGE${nl}"
+}

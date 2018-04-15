@@ -1,0 +1,36 @@
+  # Direct from root
+  :0
+  * ^from:.*root@[a-z][-a-z0-9]*(\.[a-z][-a-z0-9]*)*
+  * ^subject:.*cron +<[^@]+@\/[^.>]+
+  {
+    # Capture the hostname
+    PRI_HOST=$MATCH
+
+    # This is class "cron"
+    PRI_CLASS=cron
+
+    # Get the subject
+    :0
+    * ^subject: *\/.*
+    {
+      ORIG_SUBJECT=$MATCH
+    }
+  }
+
+  # This is now what happens when cron email goes through the
+  # /usr/local/monitor/rootemail script on monitor. This script sets
+  # "x-goc-rootemail-*" headers:
+  #
+  # x-goc-rootemail-host: the hostname from the return path
+  # x-goc-rootemail-process: the process from the original subject
+  # x-goc-rootemail-instance: the short hostname from the original subject
+  # x-goc-rootemail-cron-commandline: the cron commandline from the original subject
+  #
+  # Example:
+  #
+  # x-goc-rootemail-host: rquick.grid.iu.edu
+  # x-goc-rootemail-process: cron
+  # x-goc-rootemail-instance: rquick
+  # x-goc-rootemail-cron-commandline: [ ! -f /var/lock/subsys/fetch-crl-cron ] ||
+  #				  /usr/sbin/fetch-crl -r 20 -a 24 --quiet
+

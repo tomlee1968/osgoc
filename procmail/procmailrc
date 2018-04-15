@@ -1,0 +1,179 @@
+# Procmail rc file summary:
+
+# * A procmail rc file consists of variable assignments and recipes.  There may
+#   also be comments.
+
+# * Variable assignments:
+#   - NAME=value
+#   - There may be whitespace around the = sign, unlike shell scripts.
+#   - NAME=`cmd` runs cmd with email as stdin, captures output
+#   - Reference variables as $NAME or ${NAME}.
+#   - Can't occur inside recipes per se (but see nesting blocks)
+#   - Have no scope; all variables are global
+#   - Some special variables work like commands, taking immediate effect
+#     . INCLUDERC=file: includes another rc file here (then comes back)
+#     . SWITCHRC=file: jumps to another rc file now (never comes back)
+#     . LOG=msg: logs a message
+
+# * Recipes:
+#   - Consist of a first line, zero or more condition lines, and one action
+#     line.
+#   - First line:
+#     . Looks like :0[<flags>][:[<lockfile>]]
+#     . Useful flags include:
+#       * D (makes regexes case-sensitive)
+#       * B (conditions apply to body only)
+#       * BH (conditions apply to both body and header)
+#       * c (run the action on a copy of the email)
+#       * b (action gets body text only)
+#       * h (action gets header text only)
+#       * f (action's shell command treated as filter)
+#       * w (wait for command to return; decide what to do based on exit value)
+#       * W (same as w but suppress error messages)
+#     . If action delivers to mailbox, procmail constructs lockfile name itself
+#     . No need to have lockfile at all if action can't have race condition
+#     . Specify lockfile name if action runs a command
+#   - Condition lines:
+#     . Begin with *
+#     . Remaining text's leading/trailing whitespace is ignored
+#     . Initial Boolean value is TRUE; conditions are logically ANDed
+#     . Thus no conditions = TRUE; first FALSE condition ends test
+#     . Test email header only by default (see B and H flags)
+#     . $ text: expand as with double quoted shell string, then interpret
+#     . ? cmd: execute cmd with email as stdin; TRUE if exit status true
+#     . < num: TRUE if email less then num bytes; similar with >
+#     . VAR ?? cond: test with value of variable instead of email text
+#     . ! cond: invert condition result
+#     . anything else interpreted as a regex
+#       * case-insensitive (unless D flag used)
+#       * usual rules regarding .?*+\()|[]
+#       * ^ matches newline or start of buffer
+#       * $ matches newline or end of buffer
+#       * ^^ matches beginning or end of buffer
+#       * \< and \> match characters before/after word
+#       * \/ marks split in regex; anything matching after split goes in $MATCH
+#     . Useful macros for matching:
+#       * ^TO_<addr>: Catches most destinations matching a specific address
+#       * ^TO<addr>: Catches most destinations matching a specific word
+#       * ^FROM_DAEMON: Catches most mail sent by a daemon
+#       * ^FROM_MAILER: Catches most mail sent by a mailer daemon specifically
+#   - Action line:
+#     . First line after a :0 line that doesn't start with *
+#     . Ends recipe
+#     . A recipe can only have one action line but it may be a nesting block
+#     . Acts on entire email by default (see b and h flags)
+#     . No prefix: mailbox of some sort
+#     . No suffix: plain Unix mbox format
+#     . folder/: deliver to maildir folder
+#     . .folder.subfolder/: deliver to maildir++ subfolder
+#     . folder/.: deliver to MH folder
+#     . | cmd: pipe to command
+#     . ! addr: forward to address
+#     . { ... }: nesting block (syntax just like an rc file; no variable scope)
+
+# * Comments:
+#   - Cannot appear on a condition line
+#   - Otherwise a # and anything after it is ignored
+
+# * Procmail deletes leading and trailing whitespace from every line in its rc
+#   files before processing; indent to taste.
+
+# * Procmail ignores blank lines in rc files.
+
+# Pitfalls:
+
+# * Do not assign to built-in variables like HOST and STATUS.
+
+# My directory structure:
+
+# Top level directories are:
+
+# * level: for alerts; contains subfolders for each priority level
+# * lists: contains subfolders for different mailing lists I'm on
+# * logwatch: for logwatch messages
+# * test: for testing
+
+# Testing and debugging:
+
+# If you suspect something's wrong with your procmail rules but can't
+# tell what, as in if you're suddenly not getting any emails in your
+# inbox, you can always log to a file.  Just set
+# LOGFILE=<logfilepath>.  If there are syntax errors in your procmail
+# rules, they will appear in the logfile *before* the log messages
+# dealing with the mail message whose processing generated them.
+
+# If you use multiple procmail rc files via INCLUDERC, as I do, and
+# you can't tell which of them is generating the syntax errors, you'll
+# have to first isolate which file it is.  Eliminate as possibilities
+# any rc files that were last edited before the errors started
+# appearing.  Then pick one file, comment out every line, and either
+# wait for an email to come in, send one to yourself, or pipe an email
+# you've already received through procmail again.
+
+# To test a specific rc file, you can find a message that has already
+# been processed by that file, do whatever is necessary in your MUA to
+# show the message in pure text format with headers, copy it all, and
+# paste it into a file.  Then get rid of any mail headers that your
+# procmailrc files add to them.  Then just pipe it through procmail:
+#
+# cat <filepath> | procmail
+
+# If you've made a mistake that sends lots of messages to a bogus
+# folder, you can use the formail program to send them all through
+# procmail again:
+#
+# cat <folderpath> | formail -f -s procmail
+
+###############################################################################
+# Settings
+###############################################################################
+
+# Allows me to specify Maildir subfolders relatively:
+MAILDIR=$HOME/Maildir
+# Causes nonmatching emails to go into my main Maildir folder:
+DEFAULT=$MAILDIR/
+# Directory for procmail stuff
+PMDIR=$HOME/.procmail
+# Logs messages for debugging:
+LOGFILE=$PMDIR/log
+# Useful alias: newline
+nl="
+"
+# Useful alias: whitespace
+ws="[	 ]"
+
+###############################################################################
+# MIME Decode
+###############################################################################
+
+INCLUDERC=$PMDIR/mimedecode
+
+###############################################################################
+# Trash
+###############################################################################
+
+INCLUDERC=$PMDIR/trash
+
+###############################################################################
+# Specific folder rules
+###############################################################################
+
+INCLUDERC=$PMDIR/specific
+
+###############################################################################
+# Priority folders
+###############################################################################
+
+INCLUDERC=$PMDIR/priority
+
+###############################################################################
+# Mailing Lists
+###############################################################################
+
+INCLUDERC=$PMDIR/lists
+
+###############################################################################
+# Ticketing Systems
+###############################################################################
+
+INCLUDERC=$PMDIR/ticket

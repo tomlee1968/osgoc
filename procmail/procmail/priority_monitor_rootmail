@@ -1,0 +1,394 @@
+###############################################################################
+# Monitor rootmail
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRIORITY to one of the priority codes
+# 4. Set PRI_SERVICE to the service the message pertains to
+# 5. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 6. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# Filter on rootmail from monitor.grid, which attempts to set these headers:
+
+# x-goc-rootmail-host: the (full) hostname from the return path
+# x-goc-rootmail-orig-to: the original recipient
+# x-goc-rootmail-orig-subject: the original subject
+# x-goc-rootmail-orig-from: the original sender
+# x-goc-rootmail-process: the program that sent the mail
+# x-goc-rootmail-instance: the short hostname from the subject, if found
+
+# If the mail resulted from a cron job, there will also be
+
+# x-goc-rootmail-cron-commandline: the cron command line from the subject
+
+# Usually we see
+
+# From: GOC Monitor <no-reply@opensciencegrid.org>
+
+:0
+* ! PRI_CLASS ?? .+
+{
+  :0
+  * ^from:.*goc +monitor +<no-reply@opensciencegrid\.org>
+  {
+    # This is class "cron"
+    PRI_CLASS=monitor-rootmail
+
+    # Try to get the hostname from the x-goc-rootemail-host header
+    :0
+    * ^x-goc-rootemail-host: *\/[^. ]+
+    {
+      # If the header was 'localhost', get -instance instead.
+      :0
+      * MATCH ?? localhost
+      {
+        :0
+	* ^x-goc-rootemail-instance: *\/[^. ]+
+	{
+	  :0
+	  * MATCH ?? .+
+	  {
+	    PRI_HOST=$MATCH
+ 	  }
+	}
+      }
+
+      # If the header had a value but wasn't 'localhost', set PRI_HOST
+      # to it.
+      :0E
+      * MATCH ?? .+
+      {
+        PRI_HOST=$MATCH
+      }
+    }
+
+    # Last-ditch attempt to get anything from the subject
+    :0E
+    * ^subject:.* cron +:: *\/.*
+    {
+      # Subject remainder
+      SUBJ_REMAINDER=$MATCH
+
+      # This is class "cron"
+      PRI_CLASS=monitor-rootmail
+
+      # Get the original subject from the body
+      :0
+      * B ?? ^subject: *\/cron +<[^@]+@[^>]+>
+      {
+	ORIG_SUBJECT="$MATCH $SUBJ_REMAINDER"
+      }
+
+      # Get the original hostname
+      :0
+      * ORIG_SUBJECT ?? ^^.*cron +<[^@]+@\/[^.>]+
+      {
+	# Capture the hostname
+      	PRI_HOST=$MATCH
+      }
+    }
+  }
+}
+
+# However it got set, if PRI_CLASS is 'monitor-rootmail', deal with
+# it.
+:0
+* PRI_CLASS ?? ^^monitor-rootmail^^
+{
+  # Cron doesn't send any email unless whatever job it runs has
+  # output, and usually this output is indicative of some sort of
+  # error, because normally you don't want cron spitting out email on
+  # a regular basis.  Let's set PRI_STATUS to crit unless something
+  # else lowers it.
+  PRI_STATUS=crit
+
+###############################################################################
+# Multi-host cron jobs
+###############################################################################
+
+  # Since we often have the same or similar cron jobs running on multiple
+  # hosts, the next largest grouping of them would be by cron job.  That is, by
+  # the command that cron ran.  This command is also on the subject line.
+
+  # Messages from confsync-dyndns
+  :0
+  * ORIG_SUBJECT ?? confsync-dyndns
+  {
+    PRI_SERVICE=confsync-dyndns
+  }
+
+  # Messages from crlsync-rsync
+  :0E
+  * ORIG_SUBJECT ?? crlsync-rsync
+  {
+    PRI_SERVICE=crlsync-rsync
+  }
+
+  # Something can't rsync to backup-l/backup.goc
+  :0E
+  * ORIG_SUBJECT ?? goc@(backup-l|backup\.goc)
+  {
+    PRI_SERVICE=backup
+  }
+
+  # Some have backup.py doing their backups
+  :0E
+  * ORIG_SUBJECT ?? /(opt|root)/install/common/backup\.py
+  {
+    PRI_SERVICE=backup
+  }
+
+  # Some have a script called archive.sh doing their backups
+  :0E
+  * ORIG_SUBJECT ?? bin/archive\.sh
+  {
+    PRI_SERVICE=backup
+  }
+
+  # Puppet runs on every server and can of course encounter errors.
+  :0E
+  * ORIG_SUBJECT ?? puppet
+  {
+    PRI_SERVICE=puppet
+  }
+
+  # Messages from hostsync_ldap.pl, which runs only on LDAP servers.
+  :0E
+  * ORIG_SUBJECT ?? /opt/sbin/hostsync_ldap\.pl
+  {
+    PRI_SERVICE=hostsync_ldap.pl
+  }
+
+  # Messages from security-test: tests for rootkits
+  :0E
+  * ORIG_SUBJECT ?? /opt/sbin/security-test
+  {
+    PRI_SERVICE=security-test
+  }
+
+  :0E
+  * PRI_HOST ?? ^^(dahmer|rsv|rsv-itb)^^
+  {
+    PRI_SERVICE=rsv
+  }
+
+  # The fetch-crl program is unnecessarily noisy, especially for a cron job.
+  :0E
+  * ORIG_SUBJECT ?? fetch-crl
+  {
+    PRI_SERVICE=fetch-crl
+  }
+
+  # RHEL5/VMware hosts' libguestfs requires zfs-fuse, which includes a
+  # cron job that doesn't check whether zfs-fuse is running before
+  # assuming that it is.  I don't believe it causes any harm.
+  :0E
+  * B ?? zfs-fuse-scrub
+  {
+    PRI_SERVICE=zfs-fuse-scrub
+    PRI_STATUS=info
+  }
+
+  # Sysstat
+  :0E
+  * ORIG_SUBJECT ?? /usr/lib(64)?/sa/sa2
+  {
+    PRI_SERVICE=sysstat
+  }
+
+  # My crlsync-tarball isn't really this noisy; it calls fetch-crl, which is.
+  :0E
+  * ORIG_SUBJECT ?? /opt/sbin/crlsync-tarball
+  {
+    PRI_SERVICE=crlsync
+  }
+
+  # DenyHosts reports: somebody tried to hack us and DenyHosts shut them down
+  :0E
+  * ^x-goc-rootemail-process: *denyhosts
+  {
+    PRI_SERVICE=denyhosts
+  }
+
+  # Soichi's "logalert" program on monitor.grid is called as part of a cron job
+  # and sometimes generates pointless root mail.
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/monitor/logalert
+  {
+    PRI_SERVICE=logalert
+  }
+
+  # Soichi's "downtime.py" on monitor.grid also throws out pointless root mail.
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/monitor/downtime\.py
+  {
+    PRI_SERVICE=downtime.py
+  }
+
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/monitor/bdii_sites\.cache
+  {
+    PRI_SERVICE=monitor
+  }
+
+  # Soichi's gocbot on monitor.grid throws errors daily, but they're not my
+  # problem.
+  :0E
+  * ORIG_SUBJECT ?? gocbot
+  {
+    PRI_SERVICE=gocbot
+  }
+
+  # faulty cron job that tries to kill gocbot but it's already gone by the time
+  # it's found the pid
+  :0E
+  * ORIG_SUBJECT ?? ; then kill \$pid; fi; fi;
+  {
+    PRI_SERVICE=gocbot
+  }
+
+  # a cron job restarts gocbot daily, and it emits errors when starting up
+  :0E
+  * ORIG_SUBJECT ?? gocbot.*restart\.sh *$
+  {
+    PRI_SERVICE=gocbot
+  }
+
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/gocbot\.js
+  {
+    PRI_SERVICE=gocbot
+  }
+
+  # Soichi's job that has gocbot squawk when Google Calendar events
+  # are upcoming; it sometimes has errors, which are his problem, not mine
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/monitor/goc_calendar/goccal\.js
+  {
+    PRI_SERVICE=gocbot
+  }
+
+  # Service-monitor's "test" scripts, which run on many hosts
+  :0E
+  * ORIG_SUBJECT ?? /opt/service-monitor/.*/test\.sh
+  {
+    PRI_SERVICE=sm-test
+  }
+
+  # Other Python crashes -- put more specific rules before this one
+  :0E
+  * B ?? ^traceback *\(most +recent +call +last\)
+  {
+    PRI_SERVICE=python
+  }
+
+###############################################################################
+# Cron jobs specific to certain hosts
+###############################################################################
+
+  # gip-validator.py runs on myosg hosts
+  :0E
+  * ORIG_SUBJECT ?? /usr/local/gip-validator/gip-validator\.py
+  {
+    PRI_SERVICE=gip-validator
+  }
+
+  # ce.grid's Gratia is unnecessarily noisy.
+  :0E
+  * PRI_HOST ?? ^^ce(-itb)?^^
+  * B ?? Gratia: *Using config file: *ProbeConfig$
+  {
+    PRI_SERVICE=gratia
+  }
+
+  # Things having to do with bundy and riley are otherwise about IS
+  :0E
+  * PRI_HOST ?? ^^(bundy|riley)
+  {
+    PRI_SERVICE=is
+  }
+
+  # Monitor.grid monitors some things not at the GOC.
+  :0E
+  * PRI_HOST ?? ^^monitor^^
+  {
+    # CERN and WLCG top-level BDIIs -- they cause us trouble when
+    # they're down, but they're not under our direct control
+    :0
+    * ORIG_SUBJECT ?? monitor/bdii_(ce|sites)
+    {
+      PRI_SERVICE=top_level_bdii
+      PRI_STATUS=err
+    }
+
+    # The osg-crawler tests other machines, notably voms.grid.iu.edu,
+    # and can throw errors or warnings.
+    :0E
+    * ORIG_SUBJECT ?? voms-proxy-init
+    {
+      PRI_SERVICE=osg-crawler
+
+      :0
+      * B ?? ^warning: *\/[^:]+
+      {
+        PRI_HOST=$MATCH
+        PRI_STATUS=warn
+      }
+
+      :0E
+      * B ?? ^error: *\/[^:]+
+      {
+        PRI_HOST=$MATCH
+	PRI_STATUS=err
+      }
+    }
+  }
+
+  # NDT cron job on bundy/riley (don't think this runs anymore)
+  :0E
+  * ORIG_SUBJECT ?? ndtclt
+  {
+    PRI_SERVICE=ndt
+  }
+
+  # Perfsonar -- this specific message has been reported as critical
+  # every day forever, and nobody is fixing it.
+  :0E
+  * PRI_HOST ?? ^^perfsonar
+  {
+    PRI_SERVICE=perfsonar
+    :0
+    * B ?? ^find: .*no such file or directory
+    {
+      PRI_STATUS=err
+    }
+  }
+
+  # Anything from soichi.grid is debug
+  :0E
+  * PRI_HOST ?? ^^soichi[0-9]*^^
+  {
+    PRI_SERVICE=soichi
+  }
+
+  # The "mecheck" script on radioflyer (my desktop PC) is the Shorewall
+  # equivalent of confsync-dyndns.  It checks to see whether the
+  # meadowsedge.dyndns-home.net IP has changed, and if it has, it changes the
+  # firewall settings to let that IP in.
+  :0E
+  * PRI_HOST ?? ^^radioflyer^^
+  * ORIG_SUBJECT ?? mecheck
+  {
+    PRI_SERVICE=mecheck
+  }
+
+  # If we haven't designated another value for PRI_SERVICE so far, set it from
+  # the hostname
+  :0E
+  * ! PRI_SERVICE ?? .+
+  {
+    PRI_SERVICE=`echo "$PRI_HOST" | sed -re "s/(-(dev|docteam|int|itb|test))?[0-9]*$//"`
+  }
+}

@@ -1,0 +1,501 @@
+# Mailing lists
+
+# The goal here is to match mail that got to me because it was sent to a list
+# I'm subscribed to.
+
+# Mail I don't want filtered by this file:
+
+# * Mail that was sent to me, but also sent to a mailing list that I'm not on.
+# (To avoid this, check for a sign in the mail header that this was sent by a
+# list server.  There's usually a telltale Return-Path.)
+
+# Things I want to be careful about:
+
+# * Mail that was sent to a list that I know I'm on, but also to a list I'm not
+# on.  (The list I'm on should get priority.)
+
+# Explicit recipes for lists I know myself to be on should be first.
+
+# www.regular-expressions.info uses this to match 99% of email addresses:
+# ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,4}$
+
+###############################################################################
+# Known OnCourse Lists
+###############################################################################
+
+# First let's match OnCourse lists.  If there was ever a poster child for
+# badly-behaved list servers, it's OnCourse.  There's no indication anywhere
+# that mail software could use to determine how to post, reply, subscribe,
+# unsubscribe, or email the owner, or in fact that this is a list at all.
+# Incredibly, the following are the only common characteristics of mail from
+# OnCourse lists:
+
+# Return-Path: <postmaster@oncourse.iu.edu>
+# To: "group-name@oncourse.iu.edu" <group-name@oncourse.iu.edu>
+
+# One mail-filtering problem one encounters when working at IU is that one
+# finds oneself on mailing lists without permission or even notification.
+# Hence we must write procmail recipes that adapt themselves to the sitation.
+# However, it's pretty frequent for announcements to be spammed to multiple
+# lists, some of which I'm subscribed to and some of which I'm not.  Rather
+# than just file it under the first list listed, which is probably not one I'm
+# subscribed to, we will check the ones that I know I'm subscribed to first.
+# After that, if it still hasn't been delivered, we'll just have to improvise.
+
+:0
+* ^return-path: <postmaster@oncourse\.iu\.edu>
+* ^TO_.*\/[a-z0-9._%+-]+
+{
+  LIST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\] | sed -re 's/-l\$//'`
+
+  :0:oncourse_known.lck
+  * LIST ?? ^^(cib-green|pti-all|rt-all|no-reply)^^
+  .lists.oncourse.${LIST}/
+
+  :0:oncourse_unknown.lck
+  .lists.oncourse.${LIST}/
+}
+
+# # The cib-green list
+# :0:
+# * ^return-path: <postmaster@oncourse\.iu\.edu>
+# * ^TO_.*cib-green@oncourse\.iu\.edu
+# .lists.oncourse.green/
+# 
+# # The pti-all list
+# :0:
+# * ^return-path: <postmaster@oncourse\.iu\.edu>
+# * ^TO_.*pti-all@oncourse\.iu\.edu
+# .lists.oncourse.pti-all/
+# 
+# # The rt-all list
+# :0:
+# * ^return-path: <postmaster@oncourse\.iu\.edu>
+# * ^TO_.*rt-all@oncourse\.iu\.edu
+# .lists.oncourse.rt-all/
+# 
+# # Announcements that go to "no-reply"
+# :0:
+# * ^return-path: <postmaster@oncourse\.iu\.edu>
+# * ^TO_.*no-reply@oncourse\.iu\.edu
+# .lists.oncourse.no-reply/
+
+###############################################################################
+# Google Groups
+###############################################################################
+
+# We use a couple of Google Groups pretty frequently.  Characteristics of
+# Google Groups mail:
+
+# Return-Path: <group-name+bncCAAQ94XF_QQaBKv9RvI@googlegroups.com>
+# To: "group-name@googlegroups.com" <group-name@googlegroups.com>
+# Reply-To: group-name@googlegroups.com
+# Mailing-list: list group-name@googlegroups.com; contact group-name+owners@googlegroups.com
+# List-ID: <group-name.googlegroups.com>
+# List-Post: <http://groups.google.com/group/group-name/post?hl=en_US>, <mailto:group-name@googlegroups.com>
+# List-Help: <http://groups.google.com/support/?hl=en_US>, <mailto:group-name+help@googlegroups.com>
+# List-Archive: <http://groups.google.com/group/group-name?hl=en_US>
+# Sender: group-name@googlegroups.com
+# List-Unsubscribe: <http://groups.google.com/group/group-name/subscribe?hl=en_US>,
+#  <mailto:googlegroups-manage+692848731392+unsubscribe@googlegroups.com>
+
+:0
+* ^mailing-list: *list *[a-z0-9._%+-]+@googlegroups\.com
+* ! ^mailing-list: *list *goc-alert@googlegroups\.com
+* ^mailing-list: *list *\/[a-z0-9._%+-]+
+{
+  LIST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+
+  :0:google.lck
+  .lists.google.${LIST}/
+}
+
+:0
+* ^x-beenthere: *[a-z0-9._%+-]+@googlegroups\.com
+* ^x-beenthere: *\/[a-z0-9._%+-]+
+{
+  LIST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+
+  :0:google.lck
+  .lists.google.${LIST}/
+}
+
+###############################################################################
+# (iu)?list\.(indiana|iu)\.edu Lists
+###############################################################################
+
+# Then there are lists on the IU list server.  Characteristics of mail from
+# these lists:
+
+# Old "iulist":
+
+# Return-Path: <group-name-l-owner@iulist.indiana.edu>
+# To: "group-name-l@indiana.edu" <group-name-l@indiana.edu>
+# X-Loop: group-name-l@iulist.indiana.edu
+# Errors-to: group-name-l-owner@iulist.indiana.edu
+# Precedence: list
+# Precedence: bulk
+# Sender: group-name-l-request@iulist.indiana.edu
+# List-Id: <group-name-l.iulist.indiana.edu>
+# List-Archive: <https://iulist.indiana.edu/sympa/arc/group-name-l>
+# List-Help: <mailto:iulist@iulist.indiana.edu?subject=help>
+# List-Owner: <mailto:group-name-l-request@iulist.indiana.edu>
+# List-Post: <mailto:group-name-l@iulist.indiana.edu>
+# List-Subscribe: <mailto:iulist@iulist.indiana.edu?subject=subscribe%20group-name-l>
+# List-Unsubscribe: <mailto:iulist@iulist.indiana.edu?subject=unsubscribe%20group-name-l>
+
+# Less old "list" replaced "iulist" with "list" in the above around April,
+# 2012.
+
+# More recently (2012-08-15) they announced that they were replacing "indiana"
+# with "iu" on the following day (2012-08-16).  I have received no email under
+# this new arrangement at the time of writing this, but their announcement
+# seemed to suggest that mail would simply go to group-name-l@iu.edu.  I may
+# have to rewrite the characteristics by which procmail recognizes these
+# emails.
+
+# 2015-09-24: Despite the August 2012 announcement, it's now 2015, and
+# lists with indiana.edu are still quite very much active.  They still
+# appear very much like the old format above.  But there are also
+# lists that replace 'indiana' with 'iu'.  I guess the announcement
+# meant that all *new* lists would get 'iu'?
+
+# Recognize any of these characteristics: use if-else logic to stop
+# processing if one of them happens, then, if any of them did, file
+# the mail in a folder.
+
+:0
+* ^list-id: *<\/.*-l\.(iu)?list\.(indiana|iu)\.edu
+{
+  IULIST=`echo "$MATCH" | sed -re 's/\..*$//'`
+  LOG="Match on list-id: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^TO_.*\/[a-z][0-9a-z_-]+-l@(indiana|iu)\.edu
+{
+  IULIST=`echo "$MATCH" | sed -re 's/@.*$//'`
+  LOG="Match on TO_: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^list-subscribe: *<mailto:list@list\.(indiana|iu)\.edu?subject=subscribe%20\/[^>]+
+{
+  IULIST=$MATCH
+  LOG="Match on list-subscribe: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^list-unsubscribe: *<mailto:list@list\.(indiana|iu)\.edu?subject=unsubscribe%20\/[^>]+
+{
+  IULIST=$MATCH
+  LOG="Match on list-unsubscribe: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^errors-to: *\/[a-z][0-9a-z_-]+-l@(indiana|iu)\.edu
+{
+  IULIST=`echo "$MATCH" | sed -re 's/@.*$//'`
+  LOG="Match on errors-to: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^list-archive: *<https://list\.(indiana|iu)\.edu/sympa/arc/\/[^>]+
+{
+  IULIST=$MATCH
+  LOG="Match on list-archive: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^list-owner: *<mailto:\/[a-z][0-9a-z_-]+-l-request@list\.(indiana|iu)\.edu>
+{
+  IULIST=`echo "$MATCH" | sed -re 's/-request@list\.(indiana|iu)\.edu>$//'`
+  LOG="Match on list-owner: '$MATCH'; '$IULIST'$nl"
+}
+
+:0E
+* ^list-post: *<mailto:\/[a-z][0-9a-z_-]+-l@list\.(indiana|iu)\.edu>
+{
+  IULIST=`echo "$MATCH" | sed -re 's/@list\.(indiana|iu)\.edu>$//'`
+  LOG="Match on list-post: '$MATCH'; '$IULIST'$nl"
+}
+
+# However $IULIST got set, file the mail in a folder based on its value.
+
+:0
+* IULIST ?? .+
+{
+  LOG="IULIST has value: $IULIST$nl"
+  # Make sure it's lower case, and get rid of the -l at the end.
+  IULIST=`echo "$IULIST" | tr \[:upper:\] \[:lower:\] | sed -re 's/-l$//'`
+  LOG="IULIST has value: $IULIST$nl"
+
+  # There exists a possibility that the mail was sent to more than one
+  # list, in which case I'd rather have it go into a folder for a list
+  # that I know I'm subscribed to rather than one that I've been
+  # unknowingly subscribed to.  IU does that.
+
+  :0:iulist_known.lck
+  * IULIST ?? ^^(ci-news|cibstaff|cibstaffall|enews_mail|iubpc_dist5|iupui-data-center|monitor|ovpit-imt|retplans|mail|rt-all|sav-tsm-admin|tax|travel|uits-all|uits-bl|uits-bl-appointed|vmadmin)^^
+  .lists.iulist.${IULIST}/
+
+  :0E:iulist_unknown.lck
+  .lists.iulist.${IULIST}/
+}
+
+# IU sends out announcements via rmm.iu.edu.  Some of these I get
+# frequent messages from, so I've made folders for them.  It's easiest
+# to differentiate them via their Reply-To header.
+
+# Reply-To: IT Communications <reply-fef81175746d07-179_HTML-17804439-7209910-2@rmm.iu.edu>
+# Reply-To: Inside IU <reply-fef31175746d0c-10573_HTML-17804439-7209940-0@rmm.iu.edu>
+# Reply-To: Inside IU Bloomington <reply-feff1177776406-10588_HTML-17804439-7209940-0@rmm.iu.edu>
+# Reply-To: IU Theatre <reply-fef217787d6307-179_HTML-17804439-7209944-13@rmm.iu.edu>
+# Reply-To: "restech@iu.edu" <reply-fef81171706103-23576_HTML-27407874-7223970-0@rmm.iu.edu>
+
+:0
+* reply-to: *it communications *<.*@rmm\.iu\.edu>
+.iu.itcomm/
+
+:0
+* reply-to: *inside iu *<.*@rmm\.iu\.edu>
+.iu.iniu/
+
+:0
+* reply-to: *inside iu bloomington *<.*@rmm\.iu\.edu>
+.iu.iniub/
+
+:0
+* reply-to: *iu theatre *<.*@rmm\.iu\.edu>
+.iu.iutheatre/
+
+:0
+* reply-to: *"restech@iu\.edu" *<.*@rmm\iu\.edu>
+.iu.restech/
+
+# Then there are the ones that I rarely get email from.  Put those all
+# in one folder.  The IU Alumni Association uses something similar but
+# has their own server.  They can be detected via their
+# List-Unsubscribe header.
+# List-Unsubscribe: <mailto:leave-fd4a15777c0b5c392848-fe5b15777d640079761d-fef81177746101-fe891372756d0d7972-ff991072@leave.iumc-edu.com>
+# List-Unsubscribe: <mailto:leave-fc80107070660574737b28313958-fe31167672610c7c751471-fe5f16707c66027b7513-fe611570776c0c787512-ffcf14@leave.iualumniassociation-email.com>
+# List-Unsubscribe: <mailto:leave-fcee167075670c122d502d29-fe2e167075670c7e7d1372-fe9b16777461047e77-fe8f157073610c7e7c-ffcf14@leave.email.allclearid.com>
+# List-Unsubscribe: <mailto:leave-fcdd1076736d01122d502d29-fe52137771620c787712-fec817737761037e-fe8e127277610d7574-ffcf14@leave.email.cnet-training.com>
+
+:0
+* ^list-unsubscribe: *<mailto:leave-.*@leave(\.email)?\.\/.*\.com>
+{
+  LIST=`echo "$MATCH" | tr \[:upper:\] \[:lower:\] | sed -re 's/\.com>?$//'`
+
+  :0
+  * LIST ?? ^^iumc-edu^^
+  .lists.iu.iumc/
+
+  :0E
+  * LIST ?? ^^iualumniassociation
+  .lists.iu.iualumniassociation/
+
+  :0E
+  .lists.other.${LIST}/
+}
+
+# The Pervasive Technology Institute uses something called
+# Broadcaster.
+
+# From: Pervasive Technology Institute <pti@iu.edu>
+# Reply-To: Pervasive Technology Institute <pti@iu.edu>
+# List-Unsubscribe: <http://broadcaster.iu.edu/u?id=2B6D14548118F70966B4393EEA6B061FEE894CEF7708B298>
+
+:0
+* ^ FROM_.*pti@iu\.edu
+.lists.iu.pti/
+
+###############################################################################
+# rtinfo lists
+###############################################################################
+
+# These are run by CBRI (formerly RTCS).  The host, rtinfo.indiana.edu, is a
+# Mailman list server.
+
+# Characteristics of mail from older RTCS lists:
+
+# Return-Path: <rtcs-group-bounces@rtinfo.indiana.edu>
+# To: "group-name@rtinfo.indiana.edu" <group-name@rtinfo.indiana.edu>
+# X-BeenThere: group-name@rtinfo.indiana.edu
+# Reply-To: RTCS group <group-name@rtinfo.indiana.edu>
+# List-Id: RTCS group <group-name.rtinfo.indiana.edu>
+# List-Unsubscribe: <https://rt-spam.uits.indiana.edu/mailman/listinfo/group-name>, 
+#	<mailto:group-name-request@rtinfo.indiana.edu?subject=unsubscribe>
+# List-Archive: <https://rt-spam.uits.indiana.edu/mailman/private/group-name>
+# List-Post: <mailto:group-name@rtinfo.indiana.edu>
+# List-Help: <mailto:group-name-request@rtinfo.indiana.edu?subject=help>
+# List-Subscribe: <https://rt-spam.uits.indiana.edu/mailman/listinfo/group-name>, 
+#	<mailto:group-name-request@rtinfo.indiana.edu?subject=subscribe>
+# Sender: rtcs-group-bounces@rtinfo.indiana.edu
+# Errors-To: rtcs-group-bounces@rtinfo.indiana.edu
+
+# Characteristics of mail from the cbri-group list:
+
+# Return-Path: <cbri-group-bounces@rtinfo.indiana.edu>
+# To: group-name@rtinfo.indiana.edu
+# X-BeenThere: group-name@rtinfo.indiana.edu
+# Reply-To: group-name@rtinfo.indiana.edu
+# List-Id: <group-name.rtinfo.indiana.edu>
+# List-Unsubscribe: <https://rt-spam.uits.indiana.edu/mailman/listinfo/group-name>, 
+#	<mailto:group-name-request@rtinfo.indiana.edu?subject=unsubscribe>
+# List-Archive: <http://rt-spam.uits.indiana.edu/pipermail/group-name>
+# List-Post: <mailto:group-name@rtinfo.indiana.edu>
+# List-Help: <mailto:group-name-request@rtinfo.indiana.edu?subject=help>
+# List-Subscribe: <https://rt-spam.uits.indiana.edu/mailman/listinfo/group-name>, 
+#	<mailto:group-name-request@rtinfo.indiana.edu?subject=subscribe>
+# Sender: cbri-group-bounces@rtinfo.indiana.edu
+# Errors-To: cbri-group-bounces@rtinfo.indiana.edu
+
+# Tired of this. Gonna lump all the CBRI/RTCS email into one folder.
+
+:0:
+* ^return-path: *<(cbri|rtcs)-group-bounces@rtinfo\.indiana\.edu>
+.lists.cbri/
+
+:0:
+* ^x-beenthere: *mwt2@rtinfo\.indiana\.edu
+.lists.rtinfo.mwt2/
+
+:0:
+* ^x-beenthere: *mwt2-sys@rtinfo\.indiana\.edu
+.lists.rtinfo.mwt2-sys/
+
+###############################################################################
+# Other Known Lists
+###############################################################################
+
+:0:
+* ^TO_.*@redhat\.com
+.alert.redhat/
+
+###############################################################################
+# Broadcast Lists
+###############################################################################
+
+# These aren't sent by a listserv or similar software; they're mass
+# emailings sent by one person, and replies to the list (and requests
+# to be removed) aren't possible.
+
+# UITS Monitor
+:0:
+* ^From:.*monitor@indiana\.edu
+.lists.iulist.monitor/
+
+# Inside IU Bloomington
+:0:
+* ^From:.*iniub@indiana\.edu
+.lists.iu.iniub/
+
+# Inside IU
+:0:
+* ^From:.*iniu@indiana\.edu
+.lists.iu.iniu/
+
+# Research Technologies
+:0:
+* from:.*restech@iu\.edu
+.lists.iu.restech/
+
+# IU Theatre
+:0:
+* from:.*lntdc@indiana\.edu
+.lists.iu.iutheatre
+
+#:0:
+#* ^return-path: <goc-issues[a-z0-9._%+-]+@googlegroups\.com>
+#* ^TO_.*goc-issues@googlegroups\.com
+#.lists.google.goc-issues/
+
+#:0:
+#* ^return-path: <osggocdev[a-z0-9._%+-]+@googlegroups\.com>
+#* ^TO_.*osggocdev@googlegroups\.com
+#.lists.google.osggocdev/
+
+# IU Home Pages is bulk-mailed, not a listserv
+:0:
+* ^from:.*homepgs@indiana\.edu
+.lists.iu.homepgs/
+
+# The replacement for IU Home Pages is called Inside IU
+:0:
+* ^reply-to:.*iniu@iu\.edu
+.lists.iu.iniu/
+
+# I don't get email from the university president or provost unless it's some
+# kind of administrative announcement; these are bulk emails and not listservs
+:0:
+* ^from:.*(iupresbn|provost)@indiana\.edu
+.lists.iu.administration/
+
+:0:
+* ^TO_.*osg-general@opensciencegrid\.org
+.lists.osg.general/
+
+:0:
+* ^TO_.*osg-operations@opensciencegrid\.org
+.lists.osg.operations/
+
+:0:
+* ^TO_.*scientific-linux-users@(listserv\.)?fnal\.gov
+.lists.other.slusers/
+
+###############################################################################
+# Generic List Rules
+###############################################################################
+
+# # One mail-filtering problem one encounters when working at IU is that one
+# # finds oneself on mailing lists without permission or even notification.
+# # Hence we must write procmail recipes that adapt themselves to the sitation.
+# 
+# # OnCourse lists that haven't been handled already.  They always have
+# # Return-Path: <postmaster@oncourse.iu.edu>, and they are sent to
+# # group-name@oncourse.iu.edu.
+# :0
+# * ^return-path: <postmaster@oncourse\.iu\.edu>
+# * ^TO_.*\/[a-z0-9._%+-]+@oncourse\.iu\.edu
+# {
+#   ONCOURSE=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+# 
+#   :0:oncourse.lck
+#   * ONCOURSE ?? ^^\/[^@]+
+#   .lists.oncourse.${MATCH}/
+# }
+
+# # iulist lists that haven't been handled already.  They always have
+# # Return-Path: <group-name-owner@iulist.indiana.edu>, and they are sent to
+# # group-name@indiana.edu.  Some groups have a "-l" at the end of their names
+# # that I'd like to prevent from becoming a part of any folder name.
+# :0
+# * ^return-path: *<.+-owner@iulist\.indiana\.edu>
+# * ^TO_.*\/[a-z0-9._%+-]+@indiana\.edu
+# {
+#   LISTADDR=`echo "$MATCH" | tr \[:upper:\] \[:lower:\]`
+# 
+#   :0
+#   * LISTADDR ?? ^^\/[^@]+
+#   {
+#     LIST=`echo "$MATCH" | sed -re 's/-l$//'`
+# 
+#     :0:iulist.lck
+#     .lists.iulist.${LIST}/
+#   }
+# }
+ 
+## Mailman list membership reminders
+
+# The MailMan list server sends out monthly reminders to anyone
+# subscribed to any list on the server, telling them what lists
+# they're on.  Put these somewhere.
+
+:0:
+* ^from: *.*mailman-owner@lists\.grid\.sinica\.edu\.tw
+.lists/
+
+:0:
+* ^from: *.*mailman-owner@rtinfo\.indiana\.edu
+.lists/

@@ -1,0 +1,98 @@
+###############################################################################
+# monitor
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It is expected to:
+# 1. Skip execution if PRI_CLASS is already set to something
+# 2. Set PRI_CLASS to something, usually related to the name of this file
+# 3. Set PRIORITY to one of the priority codes
+# 4. Set PRI_SERVICE to the service the message pertains to
+# 5. If the message can have PRIORITY of crit or higher, set PRI_MESSAGE
+# 6. Optionally, set PRI_HOST, PRI_STATUS, and other PRI_ variables
+
+# Soichi's monitor runs on monitor.grid.iu.edu and processes RSV tests.  It
+# doesn't report very well what host an error is on.
+
+###############################################################################
+# Select class
+###############################################################################
+
+:0
+* ! PRI_CLASS ?? .+
+* ^from: *monitor\.grid\.iu\.edu +<goc@opensciencegrid\.org>
+* ^TO_(goc-alert@googlegroups\.com|thomlee@indiana\.edu)
+{
+  PRI_CLASS=monitor
+
+  #############################################################################
+  # Determine host
+  #############################################################################
+
+  # Determining the host is easier said than done.  Unfortunately RSV reports
+  # the service name affected, which is not necessarily the same as the
+  # hostname.  So ...
+
+  #############################################################################
+  # Determine service
+  #############################################################################
+
+  # Body will normally have a string that looks like the following:
+  # > Wed 10/26/11 22:15:02 : OSG_Display_1 RSV status is WARNING : OSG_Display service is in WARNING status.
+  :0B
+  * ^>* *[a-z]+ +[0-9]+/[0-9]+/[0-9]+ +[0-9]+:[0-9]+:[0-9]+ *: *\/[^ ]+ +rsv +status +is +[^ ]+
+  {
+    PRI_MSG=$MATCH
+
+    # This should give us "OSG_DISPLAY_1 RSV status is WARNING"
+    # Break out the service and status
+    :0
+    * PRI_MSG ?? ^^\/[^ ]+
+    {
+      PRI_SERVICE=`echo $MATCH | tr \[:upper:\] \[:lower:\]`
+    }
+
+    :0
+    * PRI_MSG ?? status +is +\/[^ ]+^^
+    {
+      PRI_STATUS=`echo $MATCH | tr \[:upper:\] \[:lower:\]`
+    }
+
+    # What to do with a status
+
+    # critical -> crit, warning -> warn
+    :0
+    * PRI_STATUS ?? ^^\/(crit|warn)
+    {
+      PRIORITY=$MATCH
+    }
+
+    PRI_MESSAGE="$PRI_HOST/$PRI_SERVICE $PRI_STATUS $PRI_MSG"
+  }
+
+  # Messages that appear on more than one service
+
+  # Unknown status
+  :0EB
+  * service is in unknown status
+  {
+    PRIORITY=warn
+  }  
+
+  # At times the body will not be formatted like this, primarily when there is
+  # an error in the monitoring, for example when the monitoring script can't
+  # contact the host at all.
+
+  # The monitor server runs bdii_sites.cache, which runs LDAP searches on BDII
+  # hosts.  But if those hosts are down, it errors out.
+  :0E
+  * ^subject: *cron.*/usr/local/monitor/bdii_sites\.cache
+  {
+    :0B
+    * ^ *failed +to +run +ldapsearch on +\/is[0-9]+
+    {
+      PRIORITY=err
+      PRI_SERVICE=is
+      PRI_HOST=$MATCH
+    }
+  }
+}

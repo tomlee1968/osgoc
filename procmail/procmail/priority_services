@@ -1,0 +1,1316 @@
+# priority_services
+
+# Part of my priority-assigning email filter system, this runs after various
+# source-based rc files that determine what service the mail pertains to.
+# Those files should set the variable PRI_SERVICE to the name of the service;
+# we should also have PRI_CLASS, telling us which of the source-based files
+# processed the email.  We may also have:
+
+# PRI_HOST: the short hostname the email pertains to
+# PRI_STATUS: a status reported by whatever sent the email
+
+###############################################################################
+# Set initial priority based on status
+###############################################################################
+
+# If the source-specific checks have set PRI_STATUS already, start
+# with that for a PRIORITY value.  Rules below may override it, but at
+# least it's a starting point.
+
+:0
+* PRI_STATUS ?? ^^crit
+{
+  PRIORITY=crit
+}
+
+:0E
+* PRI_STATUS ?? ^^err
+{
+  PRIORITY=err
+}
+
+:0E
+* PRI_STATUS ?? ^^warn
+{
+  PRIORITY=warn
+}
+
+:0E
+* PRI_STATUS ?? ^^noti
+{
+  PRIORITY=notice
+}
+
+:0E
+* PRI_STATUS ?? ^^info
+{
+  PRIORITY=info
+}
+
+:0E
+* PRI_STATUS ?? ^^debug
+{
+  PRIORITY=debug
+}
+
+###############################################################################
+# Adjust service
+###############################################################################
+
+# Various machines run similar jobs that can all have the same errors;
+# catch these here.
+
+:0
+* x-goc-rootemail-cron-commandline:.*rsync.*/root/\.ssh/id_goc\.dsa.*goc@backup\.goc
+{
+  PRI_SERVICE=backup
+}
+
+:0E
+* x-goc-rootemail-cron-commandline:.*/usr/sbin/fetch-crl
+{
+  PRI_SERVICE=fetch-crl
+}
+
+:0E
+* x-goc-rootemail-cron-commandline: */etc/cron\.daily/logrotate
+{
+  PRI_SERVICE=logrotate
+}
+
+###############################################################################
+# Adjust priority based on class
+###############################################################################
+
+# This is for messages from monitors that check multiple hosts.
+
+### My test stuff
+:0
+* PRI_CLASS ?? ^^mytest^^
+{
+  PRIORITY=debug
+}
+
+### Munin
+# Note that we test PRI_CLASS here; PRI_SERVICE varies with Munin messages
+:0E
+* PRI_CLASS ?? ^^munin^^
+{
+  :0
+  * PRI_STATUS ?? ^^crit
+  {
+    PRIORITY=crit
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^warn
+  {
+    PRIORITY=warn
+  }
+
+  # If PRI_STATUS is "unkn", change [ok] in subject to [unkn], since there's no
+  # way for Munin to do that
+  :0E
+  * PRI_STATUS ?? ^^unkn
+  {
+    PRIORITY=notice
+    SUBJECT=`formail -c -x Subject | sed -r -e "s/\[ok\]/\[unkn\]/i"`
+
+    :0fhW
+    | formail -i "Subject: $SUBJECT"
+  }
+
+  :0E
+  {
+    PRIORITY=notice
+  }
+}
+
+### RSV tests that have a status
+:0E
+* PRI_CLASS ?? ^^sm-rsv^^
+{
+  :0
+  * PRI_STATUS ?? ^^\/(debug|info|notice|warn|err|crit|alert|emerg)
+  {
+    PRIORITY=$MATCH
+  }
+
+  # Sometimes the RSV status is UNKNOWN, which should perhaps be an error,
+  # though more of an error in the monitoring system than an error in the
+  # service
+  :0E
+  * PRI_STATUS ?? ^^unknown^^
+  {
+    PRIORITY=err
+  }
+}
+
+### Fermicloud Nagios
+# This monitors multiple hosts to make sure that service-monitor is
+# running.
+:0E
+* PRI_CLASS ?? ^^fermicloud-nagios^^
+{
+  :0
+  * PRI_STATUS ?? ^^(up|ok)^^
+  {
+    PRIORITY=notice
+  }
+
+  # It's not a critical problem for us if service-monitor is down.
+  # There's no OSG SLA on it.  But it is an error condition.
+  :0E
+  * PRI_STATUS ?? ^^(down|critical)^^
+  {
+    PRIORITY=err
+  }
+}
+
+###############################################################################
+# Adjust priority based on service
+###############################################################################
+
+### Backup
+# Several servers back up their "soft data" to backup.grid, and sometimes there
+# are errors.  Many of those errors are inconsequential.
+:0E
+* PRI_SERVICE ?? ^^backup^^
+{
+  :0
+  * B ?? ^ssh_exchange_identification: *connection closed by remote host
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  {
+    PRIORITY=notice
+  }
+}
+
+### crlsync-check
+:0E
+* PRI_SERVICE ?? ^^crlsync-check^^
+{
+  PRIORITY=warn
+}
+
+### BDII, top-level
+# Sounds serious, but actually we have no control over it, though we get
+# messages about it for some reason.
+:0E
+* PRI_SERVICE ?? ^^top_level_bdii^^
+{
+  PRIORITY=debug
+}
+
+### blogs
+# If it has a status, use that
+:0E
+* PRI_SERVICE ?? ^^blogs^^
+{
+  :0
+  * PRI_STATUS ?? ^^\/(debug|info|notice|warn|err|crit|alerg|emerg)
+  {
+    PRIORITY=$MATCH
+  }
+}
+
+### condor
+:0E
+* PRI_SERVICE ?? ^^condor^^
+{
+  :0
+  * ^subject:.*condor_preen results
+  {
+    PRIORITY=notice
+  }
+}
+
+### Confsync-dyndns
+:0E
+* PRI_SERVICE ?? ^^confsync-dyndns^^
+{
+  # This doesn't happen often; something has changed the configuration.
+  :0B
+  * ^iptables: no chain/target/match by that name
+  {
+    PRIORITY=err
+  }
+}
+
+### crlsync
+:0E
+* PRI_SERVICE ?? ^^crlsync^^
+{
+
+  # This happens when a CRL URL can't be verified -- usually this is a
+  # problem at the CA and nothing we can do anything about
+  :0B
+  * ^fetch-crl.*verify failed for crl
+  {
+    PRIORITY=err
+  }
+}
+
+# I don't think anything uses this anymore ... TJL 2013-03-25
+### CRLsync-rsync
+:0E
+* PRI_SERVICE ?? ^^crlsync-rsync^^
+{
+  # This happens when crlsync-rsync can't contact the server for some reason.
+  # Usually this is the result of a transitory network issue.
+  :0B
+  * ^rsync: connection unexpectedly closed
+  {
+    PRIORITY=warn
+  }
+}
+
+# I don't think anything uses this anymore ... TJL 2013-03-25
+### CRLsync-tarball
+:0E
+* PRI_SERVICE ?? ^^crlsync-tarball^^
+{
+  PRIORITY=info
+}
+
+### Denyhosts
+# Denyhosts makes noise every time it adds somebody to its blacklist.  I
+# consider this "notice" priority.
+:0E
+* PRI_SERVICE ?? ^^denyhosts^^
+{
+  # Me stupidly trying to sudo
+  :0
+  * B ?? user not in sudoers
+  * B ?? pwd=/home/thomlee
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  {
+    PRIORITY=notice
+  }
+}
+
+### Display
+:0E
+* PRI_SERVICE ?? ^^display^^
+{
+  # Log Alerts
+  :0
+  * ^subject:.*log alerts$
+  {
+    # Those that start with ERROR: might be important, unless they're ITB
+    :0B
+    * ^(> *)?error:
+    {
+      PRIORITY=err
+    }
+
+    # There are also these timestamped messages, usually when trying
+    # to make an HTTP connection
+    :0E
+    * B ?? ^[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+,[0-9]+ - error
+    {
+      PRIORITY=err
+    }
+  }
+
+  :0E
+  * B ?? ^_mysql_exceptions\.operationalerror: *\(2003, *"can't +connect +to +mysql +server +on
+  {
+    PRIORITY=err
+  }
+
+  # The osg_display script generates a lot of email
+  :0E
+  * ^subject:.*osg_display
+  {
+    # osg_display emits "alarm clock" messages for no reason I can see.
+    :0
+    * B ?? /bin/sh: +line +[0-9]+: +[0-9]+ +alarm +clock
+    {
+      PRIORITY=debug
+    }
+
+    # osg_display also emits a lot of Python errors, which are not my problem.
+    :0E
+    * B ?? ^traceback \(most recent
+    {
+      PRIORITY=info
+    }
+  }
+}
+
+### Downtime.py (on monitor.grid)
+:0E
+* PRI_SERVICE ?? ^^downtime.py^^
+{
+  PRIORITY=debug
+}
+
+### Fail2ban
+:0E
+* PRI_SERVICE ?? ^^fail2ban^^
+{
+  PRIORITY=info
+}
+
+### Fetch-CRL
+:0E
+* PRI_SERVICE ?? ^^fetch-crl^^
+{
+  PRIORITY=info
+}
+
+### GIP Validator
+:0E
+* PRI_SERVICE ?? ^^gip-validator^^
+{
+  # This is probably a misconfiguration
+  :0
+  * B ?? ^mv: *cannot stat
+  {
+    PRIORITY=err
+  }
+}
+
+### glidein
+:0E
+* PRI_SERVICE ?? ^^glidein^^
+{
+  # Someone hasn't noticed that we centralize the CRLs; this can
+  # happen on glidein servers, as they're administered by someone
+  # else.  On osg-xsede, the system has a different set of CA certs,
+  # so we've disabled the CRL centralization because it's detrimental
+  # in that case, but as far as I know the CAs on the glidein factory
+  # and its development instances use the same CA certs as everything
+  # else; they just haven't noticed that we centralize the CRLs.  So
+  # we occasionally get these messages, which are harmless.
+  :0
+  * B ?? the +current +crl +is +more +recent +than +the +one +that +was +downloaded
+  {
+    PRIORITY=info
+  }
+
+  # They have a noisy cron script.
+  :0E
+  * B ?? /etc/cron.hourly/gfactoryLogStasher:
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^unknown^^
+  {
+    PRIORITY=err
+  }
+}
+
+### gocbot
+:0E
+* PRI_SERVICE ?? ^^gocbot^^
+{
+  PRIORITY=debug
+}
+
+### gocmon
+:0E
+* PRI_SERVICE ?? ^^gocmon^^
+{
+  # Error arising from LDAP server at another site not responding
+  :0
+  * B ?? ^failed to run ldapsearch on
+  {
+    PRIORITY=notice
+  }
+
+  # Error in a certificate -- have only seen this during maintenance
+  :0E
+  * B ?? ^unable to load certificate
+  {
+    PRIORITY=err
+  }
+
+  # No such file or directory -- nobody seems to care about this, as
+  # it keeps happening and happening.  It's certainly not unusual.
+  :0E
+  * B ?? ^mv: *cannot stat *`.*': *no such file or directory
+  {
+    PRIORITY=info
+  }
+
+  # Anything else -- Soichi's problem
+  :0E
+  {
+    PRIORITY=debug
+  }
+}
+
+### Google Groups messages
+:0E
+* PRI_SERVICE ?? ^^googlegroups^^
+{
+  # Moderator's spam reports
+  :0
+  * ^subject: *moderator's +spam +report
+  {
+    PRIORITY=info
+  }
+}
+
+### Gratia
+:0E
+* PRI_SERVICE ?? ^^gratia^^
+{
+  :0
+  * PRI_HOST ?? ^^ce(-itb)?^^
+  * B ?? Gratia: *Using config file: *ProbeConfig$
+  {
+    PRIORITY=trash
+  }
+}
+
+### Gratiaweb
+# For some reason, Soichi has written the Gratiaweb service monitor to elevate
+# certain log file messages to alert email status.  These errors may be of
+# interest to Gratiaweb developers (and they should fix them), but since we
+# don't develop the software here, it's not our problem.
+:0E
+* PRI_SERVICE ?? ^^gratiaweb^^
+{
+  :0
+  * ^subject:.*/var/log/gratiaweb-error\.log
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * ^subject:.*/var/log/static_graphs\.err
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * B ?? syntax error
+  {
+    PRIORITY=err
+  }
+
+  # Gratiaweb gets the VO summary XML file from myosg
+  :0E
+  * ^subject:.*/curl +.*//myosg\.grid\.iu\.edu/vosummary/xml
+  {
+    PRIORITY=err
+  }
+
+  # Gratiaweb monitors and restarts itself, emitting root mail
+  :0E
+  * ^subject:.*gratiagraph-monitor.sh
+  {
+    :0
+    * B ?? ^ *starting +gratiaweb: *\[ *OK *\]
+    {
+      PRIORITY=info
+    }
+
+    :0E
+    {
+      PRIORITY=err
+    }
+  }
+
+  # I don't know what gratiaweb is doing about sysstat, but it's
+  # somehow messing up the log files.
+  :0E
+  * B ?? invalid system activity file
+  {
+    PRIORITY=notice
+  }
+
+  # Gratiaweb has a cron script called gratia_web_auth_update that is
+  # unnecessarily noisy.  I've tried directing its output to
+  # /dev/null, but apparently this output is sent to stderr despite
+  # being normal output.
+
+  :0E
+  * B ?? ^subject:.*gratia_web_auth_update
+  {
+    PRIORITY=info
+  }
+}
+
+### Hostsync_ldap.pl
+:0E
+* PRI_SERVICE ?? ^^hostsync_ldap.pl^^
+{
+  PRIORITY=info
+}
+
+### IS (aka BDII)
+:0E
+* PRI_SERVICE ?? ^^is^^
+{
+  # This seems to happen a lot on riley but nobody seems to care
+  :0
+  * ^subject:.*rsync
+  * B ?? no data available
+  {
+    PRIORITY=info
+  }
+
+  :0E
+  * B ?? ^^failed to run ldapsearch on
+  {
+    PRIORITY=info
+  }
+
+  :0E
+  * B ?? ^ldap_result: *can't contact ldap server
+  {
+    PRIORITY=info
+  }
+
+  :0E
+  * ^subject:.*\[error\]
+  {
+    PRIORITY=err
+  }
+}
+
+### IS-backup
+:0E
+* PRI_SERVICE ?? ^^is-backup^^
+{
+  :0B
+  * ^rsync: connection unexpectedly closed
+  {
+    PRIORITY=err
+  }
+}
+
+### JIRA
+:0E
+* PRI_SERVICE ?? ^^jira^^
+{
+  # Sadly JIRA emits bazillions of error messages all the time and
+  # nobody appears to care -- they are apparently seen as normal
+
+  :0
+  * ^subject:.*log alerts
+  {
+    PRIORITY=notice
+  }
+}
+
+### jump
+:0E
+* PRI_SERVICE ?? ^^jump^^
+{
+  # Trying to sudo on jump causes an error email, but GOC employees
+  # accidentally doing this isn't critical. It happens sometimes.
+  :0
+  * B ?? : *(echism|kagross|mvkrenz|rquick|schmiecs|steige|thomlee) *: *user +not +in +sudoers
+  {
+    PRIORITY=info
+  }
+}
+
+### logalert (on monitor.grid)
+:0E
+* PRI_SERVICE ?? ^^logalert^^
+{
+  PRIORITY=debug
+}
+
+### logrotate (on nearly all hosts)
+:0E
+* PRI_SERVICE ?? ^^logrotate^^
+{
+  # As far as I can tell, these "redirecting to" messages are an
+  # informational message that has appeared in RHEL 7's logrotate (and
+  # hence on CentOS 7's), and although people are complaining about
+  # it, nobody seems to want to do anything about it.
+  :0
+  * B ?? ^redirecting +to 
+  {
+    PRIORITY=notice
+  }
+}
+
+### LVS
+:0E
+* PRI_SERVICE ?? ^^lvs^^
+{
+  # Late heartbeat warnings -- haven't become errors yet
+  :0B
+  * warn: *late heartbeat
+  {
+    PRIORITY=warn
+  }
+
+  # Change in ipvsadm configuration
+  :0E
+  * B ?? ipvsadm configuration has changed
+  {
+    PRIORITY=info
+  }
+
+  # refresh_ipvsadm: lvs servers do this when ipvsadm has changed and they try
+  # to backup
+  :0E
+  * ^subject:.*refresh_ipvsadm
+  {
+    PRIORITY=info
+  }
+
+  # Connection closed by remote host: Trying to sync but it didn't
+  # work; probably too many SSH connections on backup.grid
+  :0E
+  * B ?? ssh_exchange_identification: +connection closed by remote host
+  {
+    PRIORITY=err
+  }
+}
+
+### mecheck (Shorewall equivalent of confsync-dyndns on radioflyer)
+:0E
+* PRI_SERVICE ?? ^^mecheck^^
+{
+  PRIORITY=info
+}
+
+### monitor (monitor.grid; monitors lots of stuff)
+:0E
+* PRI_SERVICE ?? ^^monitor^^
+{
+  # CERN's BDII server is down; nothing we can do about this
+  :0
+  * B ?? failed to run ldapsearch on .*\.cern\.ch
+  {
+    PRIORITY=info
+  }
+}
+
+### This is if the message is about the Munin service itself
+:0E
+* PRI_SERVICE ?? ^^munin^^
+{
+  # These are cron messages about data files that aren't being updated
+  :0
+  * subject:.*cron.*find /usr/local/munin/lib
+  {
+    PRIORITY=info
+  }
+}
+
+### Myosg
+:0E
+* PRI_SERVICE ?? ^^myosg^^
+{
+  # MySQL Errors -- not even Soichi does anything with them
+  :0B
+  * ^>* *\[[0-9]+-[a-z]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+\] +(utc +)?\[?err\]?
+  {
+    PRIORITY=debug
+  }
+
+  :0EB
+  * ^>* *[0-9]+-[0-9]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+ +[a-z]+ +error:
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * ^subject:.*top_level_wlcg_bdii_monitor\.stderr
+  {
+    PRIORITY=debug
+  }
+
+  # MySQL Warnings -- these are fairly routine and not even Soichi does anything about them
+  :0EB
+  * ^>* *\[[0-9]+-[a-z]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+\] +(utc +)?\[?warn\]?
+  {
+    PRIORITY=debug
+  }
+
+  :0EB
+  * ^>* *[0-9]+-[0-9]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+ +[a-z]+ +warn(ing)?:
+  {
+    PRIORITY=debug
+  }
+
+  # PHP Warnings
+  :0EB
+  * ^>* *\[[0-9]+-[a-z]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+\] +php +warning:
+  {
+    PRIORITY=warn
+  }
+
+  # PHP Notices
+  :0EB
+  * ^>* *\[[0-9]+-[a-z]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+\] +php +notice:
+  {
+    PRIORITY=notice
+  }
+
+  # PHP Fatal Errors
+  :0EB
+  * ^>* *\[[0-9]+-[a-z]+-[0-9]+ +[0-9]+:[0-9]+:[0-9]+\] +php +fatal +error:
+  {
+    PRIORITY=err
+  }
+
+  # Python errors
+  :0E
+  * B ?? ^(> *)?traceback \(most recent
+  {
+    PRIORITY=err
+  }
+
+  # Log messages -- IMHO these should not be emailed
+  :0E
+  * ^subject:.*/usr/local/myosg/app/logs/error\.txt
+  {
+    PRIORITY=debug
+  }
+
+  # More log messages
+  :0E
+  * ^subject:.*\.log
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^err
+  {
+    PRIORITY=err
+  }
+}
+
+### nas
+:0E
+* PRI_SERVICE ?? ^^nas^^
+{
+  :0
+  * B ?? ^ *level: *error
+  {
+    PRIORITY=crit
+  }
+
+  :0E
+  * B ?? ^ *level: *warning
+  {
+    PRIORITY=warn
+  }
+
+  :0E
+  * ^subject: *antivirus report
+  {
+    PRIORITY=info
+  }
+
+  :0E
+  * ^subject: *test mail
+  {
+    PRIORITY=debug
+  }
+}
+
+### NDT
+:0E
+* PRI_SERVICE ?? ^^ndt^^
+{
+  # NDT cron job on bundy/riley sometimes gets errors when destination busy
+  :0
+  * B ?? ^^another client is currently begin served
+  {
+    PRIORITY=debug
+  }
+}
+
+### OASIS
+:0E
+* PRI_SERVICE ?? ^^oasis^^
+{
+  :0
+  * B ?? ^traceback \(most recent call last\):
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * ^subject:.*generate_condormap\.py
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * ^subject:.*generate_adduser\.py
+  {
+    PRIORITY=debug
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^err
+  {
+    PRIORITY=err
+  }
+}
+
+### OIM
+:0E
+* PRI_SERVICE ?? ^^oim^^
+{
+  # There might already be a priority from earlier in the stream; honor that
+  :0
+  * ! PRIORITY ?? .+
+  {
+    # Tomcat sometimes throws Log Alerts
+    :0
+    * ^subject:.*log alerts
+    {
+      # With ERROR in the first line, it might be important
+      :0D
+      * B ?? ^.*ERROR
+      {
+        PRIORITY=err
+      }
+
+      :0ED
+      * B ?? ^.*WARN
+      {
+        PRIORITY=warn
+      }
+    }
+  }
+}
+
+### Dell OpenManage (runs on all physical servers)
+:0E
+* PRI_SERVICE ?? ^^dellom-\/.*
+{
+  CODE=$MATCH
+#  LOG="Code: $CODE${nl}"
+  :0
+  * CODE ?? ^^powersupply^^
+  {
+    PRIORITY=crit
+  }
+}
+
+### Dell OpenManage Server Administrator (OMSA) -- a second attempt
+:0E
+* PRI_SERVICE ?? ^^omsa^^
+{
+  :0
+  * PRI_CODE ?? ^^(fanfail|memfail|pdiskfail|powersupply|processorfail|storagectrlfail|storagesysfail|systempowerfail|tempfail|vdiskfail|voltfail)^^
+  {
+    PRIORITY=crit
+  }
+
+  :0E
+  {
+    PRIORITY=warn
+  }
+}
+
+### OSG-XSEDE
+:0E
+* PRI_SERVICE ?? ^^osg-xsede^^
+{
+  :0
+  * ^subject: cron
+  {
+    PRI_CLASS=cron
+    PRIORITY=err
+  }
+
+  :0E
+  * PRI_CLASS ?? ^^cron^^
+  {
+    PRIORITY=err
+  }
+}
+
+### Perfsonar
+:0E
+* PRI_SERVICE ?? ^^perfsonar^^
+{
+  :0
+  * ^subject:.*\[error\]
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * ^subject:.*failing socks5 test
+  {
+    PRIORITY=err
+  }
+
+  # Perfsonar's many errors do not call for me to drop everything and
+  # fix them. Hence, they are "err" and not "crit".
+  :0E
+  {
+    PRIORITY=err
+  }
+}
+
+### PSDS (Perfsonar Data Store)
+:0E
+* PRI_SERVICE ?? ^^psds^^
+{
+  # These machines seem to run Condor, which emits many informational
+  # emails that should be suppressed IMO
+  :0
+  * ^subject:.* schedd +restart +report +for
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * subject:.* +(condor_(collector|negotiator|schedd|startd)|runfactory) +exited 
+  {
+    PRIORITY=warn
+  }
+}
+
+### Puppet
+:0E
+* PRI_SERVICE ?? ^^puppet^^
+{
+  PRIORITY=$PRI_STATUS
+}
+
+### Python (this is a fallback in case there's no more specific info)
+:0E
+* PRI_SERVICE ?? ^^python^^
+{
+  PRIORITY=err
+}
+
+### Repo
+:0E
+* PRI_SERVICE ?? ^^repo^^
+{
+  :0
+  * ^subject:.*update_mirror.py
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * B ?? ^urllib2\.urlerror: +<urlopen +error *\(110, *'connection +timed +out'\)>
+  {
+    PRIORITY=err
+  }
+}
+
+### RSV (itself)
+:0E
+* PRI_SERVICE ?? ^^rsv^^
+{
+  # This happens on rsv.grid all the time, apparently.
+  :0
+  * ^subject:.*/opt/service-monitor/rsv/test.sh
+  * B ?? ^find:.*no such file or directory
+  {
+    PRIORITY=debug
+  }
+
+  # This is beginning to happen on RSV lately.  2012-06-04
+  :0E
+  * ^subject:.*/dump_xml_records\.sh
+  {
+    PRIORITY=notice
+  }
+
+  # RSV has these problems occasionally
+  :0E
+  * B ?? the total number of locks exceeds the lock table size
+  {
+    PRIORITY=err
+  }
+
+  # DB errors of some sort
+  :0E
+  * B ?? ^error [0-9]+ \([0-9]+\):
+  {
+    PRIORITY=err
+  }
+
+  # We've seen these info messages recently (2013-05-20)
+  :0E
+  * B ?? ^backing up rsvsam db
+  {
+    PRIORITY=info
+  }
+}
+
+## rsvprocess
+:0E
+* PRI_SERVICE ?? ^^rsvprocess^^
+{
+  :0
+  * ^subject:.*mysql replication status
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^err^^
+  {
+    PRIORITY=err
+  }
+}
+
+### rsync
+:0E
+* PRI_SERVICE ?? ^^rsync^^
+{
+  :0
+  * B ?? ^ *rsync: *connection unexpectedly closed
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * B ?? ^ *rsync +warning: *some +files +vanished +before +they +could +be +transferred
+  {
+    PRIORITY=err
+  }
+}
+
+### Security-test
+:0E
+* PRI_SERVICE ?? ^^security-test^^
+{
+  PRIORITY=err
+}
+
+### Swamp-in-a-Box
+:0E
+* PRI_SERVICE ?? ^^sib^^
+{
+  :0
+  * subject:.* +schedd +restart +report +for
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * subject:.* +(condor_(collector|negotiator|schedd|startd)|runfactory) +exited 
+  {
+    PRIORITY=warn
+  }
+}
+
+### sm-test: /opt/service-monitor/*/test.sh on any host
+:0E
+* PRI_SERVICE ?? ^^sm-test^^
+{
+  PRIORITY=debug
+}
+
+### Soichi
+# Whatever he's doing on soichi.grid.iu.edu that's generating emails, it's not
+# my business
+:0E
+* PRI_SERVICE ?? ^^soichi
+{
+  PRIORITY=debug
+}
+
+### Sudo
+# Users aren't allowed to sudo on jump/jump2, so when they do, sudo generates
+# an error rootmail (and denyhosts does too, qq.v.).  Usually it's just one of
+# us who forgot about this, but it could be a security problem; you never know.
+:0E
+* PRI_SERVICE ?? ^^sudo^^
+{
+  PRIORITY=notice
+
+  # If it was me, I already know about it; make it debug
+  :0
+  * B ?? pwd=/home/thomlee
+  {
+    PRIORITY=debug
+  }
+}
+
+### supportvm: lots of testing occurs on these
+:0E
+* PRI_SERVICE ?? ^^supportvm^^
+{
+  PRIORITY=debug
+}
+
+### swamp-ticket
+:0E
+* PRI_SERVICE ?? ^^swamp-ticket^^
+{
+  PRIORITY=err
+}
+
+### syslog
+:0E
+* PRI_SERVICE ?? ^^syslog^^
+{
+  :0
+  * B ?? ^/usr/bin/xz: adjusted lzma2 dictionary size
+  {
+    PRIORITY=info
+  }
+}
+
+### Testing of one kind or another
+:0E
+* PRI_SERVICE ?? ^^test^^
+{
+  PRIORITY=debug
+}
+
+### Ticket
+:0E
+* PRI_SERVICE ?? ^^ticket^^
+{
+  :0
+  * ^subject:.*/usr/local/ticket(/goc)?/app/logs/error\.txt
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * ^subject:.*cron.*solrloader
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^err
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * ^subject: *ticket[0-9]+\.grid\.iu\.edu +system +events:
+  {
+    PRIORITY=info
+  }
+}
+
+### TSM
+:0E
+* PRI_SERVICE ?? ^^tsm^^
+{
+  :0
+  * PRI_STATUS ?? ^^err
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * PRI_STATUS ?? ^^warn
+  {
+    PRIORITY=warn
+  }
+
+  :0E
+  {
+    PRIORITY=info
+  }
+}
+
+### TWiki
+:0E
+* PRI_SERVICE ?? ^^twiki^^
+{
+  # Apache errors -- why do these even get monitored and emailed out?
+  # We already have a technology to handle these.  It's called
+  # logfiles.  Surely Soichi is not proposing we replace syslog with
+  # email?
+  :0
+  * ^subject:.*/var/log/httpd/(ssl_)?error_log
+  {
+    PRIORITY=info
+  }
+}
+
+### TX
+:0E
+* PRI_SERVICE ?? ^^tx^^
+{
+  :0
+  * PRI_STATUS ?? ^^err
+  {
+    PRIORITY=err
+  }
+
+  :0E
+  * ^subject:.*/usr/local/goctx/error\.txt
+  {
+    PRIORITY=notice
+  }
+
+  :0E
+  * ^subject:.*/usr/local/goctx/log\.txt
+  {
+    PRIORITY=notice
+  }
+}
+
+### VOMS
+:0E
+* PRI_SERVICE ?? ^^voms^^
+{
+  :0BH
+  * ^subject: *cron
+  {
+    PRIORITY=notice
+  }
+}
+
+### Web
+:0E
+* PRI_SERVICE ?? ^^web^^
+{
+  # Again with the Apache logfile errors getting emailed out
+  :0
+  * ^subject:.*/var/log/httpd/(ssl_)?error_log
+  {
+    PRIORITY=info
+  }
+
+  # Lots of mysql errors come from here
+  :0E
+  * ^subject:.*mysql replication status
+  {
+    PRIORITY=info
+  }
+}
+
+### wn (worker node)
+:0E
+* PRI_SERVICE ?? ^^wn^^
+{
+  # These machines run their own fetch-crl instead of running a cron
+  # job to update the goc-crls RPM as most GOC machines do.  It's
+  # because this is what the OSG software does, and wn1/2/etc. are
+  # meant for belweathering the OSG software.  Anyway, sometimes
+  # fetch-crl goes awry due to no fault of our own -- it happens
+  # rather frequently, actually, because in order for it not to goof
+  # up, every single OSG CA must have its act 100% together.  Well, we
+  # have no control over them, so if this goes wrong, it's not our
+  # problem.
+  :0
+  * ^subject:.*fetch-crl
+  {
+    PRIORITY=notice
+  }
+}

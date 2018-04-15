@@ -1,0 +1,49 @@
+# Procmail rules for specific folders
+
+# This is for messages I get regularly about a specific topic, but that aren't
+# alert emails or from a mailing list.  This takes effect before the priority
+# system and before the mailing list filter, so this might hijack messages that
+# would otherwise go to a mailing list folder.  I consider that OK.
+
+# All logwatch messages go to same folder
+# Some machines send me logwatch directly
+:0:
+* ^from:.*logwatch@[^.]+
+.logwatch/
+
+# Some machines send it to goc-alert, so it appears to come from "GOC
+# Monitor <no-reply@opensciencegrid.org>" with "[logwatch]" in the
+# subject.
+:0:
+* ^subject:.*\[logwatch\]
+.logwatch/
+
+# Some logwatch mail comes from root@host and is sent to
+# sysadmin@something.  It has "Logwatch for ..." as its subject.
+:0:
+* ^from:.*root@
+* ^subject: *Logwatch for
+.logwatch/
+
+# UISO scans
+:0:
+* ^from:.*uisoscan@iu\.edu
+.alert.uiso/
+
+# Mail from me (testing the TTS rules on my MacBook)
+:0fhW
+* ^from:.*thomlee@iu\.edu
+| formail -i "X-TJL-Speak: This is a message from you"
+
+# For some reason, when ticket1/2 send out mail to a list of
+# recipients and one or more of those bounces back, I get the bounced
+# mail, and I don't want it in my inbox making me think it's important
+:0:
+* ^from: *mailer-daemon@ticket[0-9]+\.grid\.iu\.edu
+* ^subject: *undelivered\ mail\ returned\ to\ sender
+.level.debug/
+
+# Box.com updates
+:0:
+* ^from:.*noreply@box\.com
+.box/

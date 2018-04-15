@@ -1,0 +1,56 @@
+###############################################################################
+# Decode MIME Messages
+###############################################################################
+
+# Many of my procmail rules won't work or will produce garbled results
+# if the message is encoded via MIME's base64 or quoted-printable
+# schemes.  The rules in this file should run before others; they
+# should decode email bodies encoded via one of those two schemes
+# without affecting attachments.  I hope.
+
+# This is taken straight from "man 5 procmailex", with the exception
+# that mimencode, which is used in that man page, isn't distributed
+# with RHEL, nor is it found in any package on EPEL, so we have to
+# make do.
+
+# This won't affect messages with attachments, because with those the
+# header's Content-Type will be "multipart/*".  This won't pick up on
+# Content-Type headers in attachment sections because those aren't
+# part of the main mail header.  Encoded attachments won't be touched.
+# In other words, this rule will only affect messages without
+# attachments that are type "text/plain" with
+# "Content-Transfer-Encoding" set to either "base64" or
+# "quoted-printable".
+
+:0
+* ^Content-Type: *text/plain
+{
+
+  # If the main message has a "Content-Transfer-Encoding" header field
+  # indicating that it is "quoted-printable", filter the body through
+  # this decoding command and wait for it to complete.
+
+  :0fbw
+  * ^Content-Transfer-Encoding: *quoted-printable
+  | perl -p -e 'BEGIN { use MIME::QuotedPrint; } $_ = decode_qp($_);'
+
+  # If the previous rule happened, regardless of return value, filter
+  # the header through this command to change the encoding type to
+  # "8bit".
+
+  :0Afhw
+  | formail -I "Content-Transfer-Encoding: 8bit"
+
+  # Likewise, if the encoding is "base64", filter the body through
+  # this command to decode it.
+
+  :0fbw
+  * ^Content-Transfer-Encoding: *base64
+  | openssl base64 -d
+
+  # Likewise, if the previous command happened, filter the header
+  # through this command to change the encoding type to "8bit".
+
+  :0Afhw
+  | formail -I "Content-Transfer-Encoding: 8bit"
+}

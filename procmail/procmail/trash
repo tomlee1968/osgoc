@@ -1,0 +1,20 @@
+# Messages I know I don't want
+
+###############################################################################
+# Spam
+###############################################################################
+
+###############################################################################
+# Exchange call forwarding notifications
+###############################################################################
+
+# For inexplicable reasons, IU has gone to a Microsoft Lync phone
+# system and a Microsoft Exchange mail system, and they're connected,
+# to the extent that whenever the system forwards a phone call from my
+# desk phone to my mobile phone, I get an email about it, and there
+# seems to be no way to prevent this.  I don't need to be notified by
+# email that I got a phone call (I already got a phone call about it).
+# Trash these.
+:0
+* ^Sender: .*@exchange\.iu\.edu
+.Trash/

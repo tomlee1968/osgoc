@@ -1,0 +1,77 @@
+###############################################################################
+# service-monitor RSV
+###############################################################################
+
+# This is a procmailrc file, part of my priority system.  It's a bit different
+# from the usual ones, though, because this is for messages that come from
+# Soichi's service-monitor script that have alerts from more than one host in
+# them at the same time.  I'd like to handle these separately, but Procmail
+# doesn't have a normal way to handle this sort of thing, so I'm going to write
+# a Perl script that splits the body up and creates multiple emails with the
+# same header (varying the Message-Id, however), running them through Procmail
+# again so each one gets processed separately.
+
+# The hallmarks of such emails are:
+
+# From: "monitor.grid.iu.edu" <goc@opensciencegrid.org>
+# Subject: [rsvtest] Problem with central services
+
+# The body will have one or more lines that look like:
+
+# > Mon 03/25/13 11:15:02 : OSG_Display_1 RSV status is CRITICAL : display1.grid.iu.edu
+
+# Note that these emails are in MIME Quoted-Printable format, meaning that
+# lines are truncated at 76 characters and terminated with '=' as a
+# continuation mark and that '=' is escaped as '=3D'.  Procmail doesn't handle
+# this format well, but Perl's MIME::Tools module does.
+
+# The string "OSG_Display_1" is defined in the RSV probe and may actually
+# contain spaces.
+
+# The goal here is to pipe the message to a Perl script in a terminating
+# fashion -- there's no expectation that we'll return from this, because the
+# message will be split into multiple messages that will each then go through
+# Procmail separately.
+
+# Then, after the emails have gone through the Perl script and been divided and
+# run back through Procmail, this script sets the PRI_ variables for it, where
+# it then gets processed by priority_services.
+
+# First make sure nothing's set PRI_CLASS to anything
+:0
+* ! PRI_CLASS ?? .+
+{
+  # Second, to prevent the script from seeing the message again, it will set a
+  # header, 'X-TJL-Pri-SM-RSV-Seen' (its value is unimportant; it is its
+  # presence that is telling)
+  :0
+  * ! ^x-tjl-pri-sm-rsv-seen:
+  * ^from: *"monitor\.grid\.iu\.edu" +<goc@opensciencegrid\.org> *$
+  * ^subject: *\[rsvtest\] +problem +with +central +services *$
+  | $HOME/.procmail/priority_sm_rsv.pl
+
+  # If that header is present, process the message differently
+  :0E
+  * ^x-tjl-pri-sm-rsv-seen:
+  {
+    PRI_CLASS=sm-rsv
+
+    :0
+    * ^x-tjl-pri-sm-rsv-host: *\/[^ ]+
+    {
+      PRI_HOST=$MATCH
+    }
+
+    :0
+    * ^x-tjl-pri-sm-rsv-status: *\/[^ ]+
+    {
+      PRI_STATUS=$MATCH
+    }
+
+    :0
+    * ^x-tjl-pri-sm-rsv-service: *\/[^ ]+
+    {
+      PRI_SERVICE=$MATCH
+    }
+  }
+}
